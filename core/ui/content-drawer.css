@@ -14,31 +14,38 @@
   gap: 8px;
   border: none;
   border-radius: 999px;
-  padding: 9px 15px 9px 10px;
-  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  padding: 7px 14px 7px 8px;
+  background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
   color: #ffffff;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 8px 24px rgba(29, 78, 216, 0.36);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 #pd-fab:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.45);
+  box-shadow: 0 10px 28px rgba(29, 78, 216, 0.46);
 }
 
 .pd-fab-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.22);
-  font-size: 11px;
-  font-weight: 700;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.2);
+}
+
+.pd-fab-badge svg,
+.pd-logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 #pd-drawer {
@@ -82,14 +89,11 @@
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #2563eb, #06b6d4);
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .pd-title {

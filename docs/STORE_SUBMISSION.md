@@ -144,10 +144,10 @@ How to inspect & test:
 
 | 素材 | 尺寸要求 | 状态 |
 | --- | --- | --- |
-| 扩展图标 | `128×128` PNG（Chrome） / `300×300` PNG（Edge 商店页图标，可由矢量或 `icon128` 导出） | `icons/icon128.png` 已就绪（Edge 需额外导出 `300×300`） |
-| 商店截图（至少 1 张，建议 3 张） | `1280×800` PNG（无透明通道） | 建议截取：① 扩展弹窗设置页 ② 百度网盘页悬浮抽屉 ③ 整文件夹流式下载进度页（注意遮挡个人文件名/AppKey） |
-| 小型宣传图（Chrome 必填 / 推荐） | `440×280` PNG | 上架前制作 |
-| Edge 促销图（可选） | `440×280` / `1400×560` PNG | 可选 |
+| 扩展图标（Chrome / 包内） | `16×16` / `48×48` / `128×128` RGBA PNG | ✅ 已就绪：`icons/icon16.png`、`icons/icon48.png`、`icons/icon128.png`（矢量源稿 `assets/store/icon.svg`） |
+| Edge Add-ons 商店图标 | `300×300` RGBA PNG | ✅ 已就绪：`assets/store/edge-icon-300.png` |
+| Chrome Web Store 小型宣传图 | `440×280` RGB PNG（无透明通道） | ✅ 已就绪：`assets/store/promo-440x280.png` |
+| 商店功能截图（至少 1 张，建议 3 张） | `1280×800` PNG（无透明通道） | ⬜ 上架前实机截取：① 扩展弹窗设置页 ② 百度网盘页悬浮抽屉 ③ 整文件夹流式下载进度页（注意遮挡个人文件名 / AppKey） |
 
 ---
 

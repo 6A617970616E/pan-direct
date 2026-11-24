@@ -88,19 +88,41 @@
       return { dir, displayPath };
     }
 
+    function renderBrandIconSvg(uid) {
+      return `
+        <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="pdBg_${uid}" x1="10" y1="8" x2="118" y2="122" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#1E3A8A" />
+              <stop offset="50%" stop-color="#2563EB" />
+              <stop offset="100%" stop-color="#0EA5E9" />
+            </linearGradient>
+            <linearGradient id="pdLoop_${uid}" x1="48" y1="26" x2="98" y2="74" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#BAE6FD" />
+              <stop offset="100%" stop-color="#38BDF8" />
+            </linearGradient>
+          </defs>
+          <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#pdBg_${uid})" />
+          <path d="M48 31 H74 C88.5 31 98 40.2 98 52.5 C98 64.8 88.5 74 74 74 H64" fill="none" stroke="url(#pdLoop_${uid})" stroke-width="14.5" stroke-linecap="round" />
+          <path d="M48 31 V93" fill="none" stroke="#FFFFFF" stroke-width="14.5" stroke-linecap="round" />
+          <path d="M29 77 L48 96 L67 77" fill="none" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      `;
+    }
+
     const root = document.createElement("div");
     root.id = "pandirect-root";
     root.className = "pd-hidden";
     root.innerHTML = `
       <button id="pd-fab" title="打开 PanDirect 直链下载面板">
-        <span class="pd-fab-badge">PD</span>
+        <span class="pd-fab-badge">${renderBrandIconSvg("fab")}</span>
         <span>PanDirect 直下</span>
       </button>
 
       <div id="pd-drawer" class="pd-hidden" role="dialog" aria-label="PanDirect 直链下载">
         <div class="pd-header">
           <div class="pd-title-wrap">
-            <span class="pd-logo">PD</span>
+            <span class="pd-logo">${renderBrandIconSvg("hdr")}</span>
             <div>
               <div class="pd-title">PanDirect · ${providerName}</div>
               <div class="pd-path" id="pd-current-path">/</div>

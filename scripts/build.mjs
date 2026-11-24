@@ -430,6 +430,7 @@ export function verifyEditionDirectory({ edition, outDir, manifest, providers })
     "scripts",
     "tests",
     "docs",
+    "assets",
   ];
   for (const forbidden of forbiddenFiles) {
     if (fs.existsSync(path.join(outDir, forbidden))) {

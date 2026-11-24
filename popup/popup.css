@@ -55,17 +55,12 @@ body {
   gap: 10px;
 }
 
-.logo {
-  width: 34px;
-  height: 34px;
+.logo-img {
+  width: 36px;
+  height: 36px;
   border-radius: 9px;
-  background: linear-gradient(135deg, #2563eb, #06b6d4);
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  flex-shrink: 0;
 }
 
 .title-row {
