@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PanDirect · 文件夹下载器</title>
+    <link rel="stylesheet" href="downloader.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo">PD</div>
+          <div>
+            <h1>PanDirect 文件夹下载器</h1>
+            <p class="sub">本地直接建目录 · 流式写盘不爆内存 · 支持 Aria2 批量推送</p>
+          </div>
+        </div>
+        <div class="meta-pills">
+          <span class="pill" id="fileCountPill">扫描中...</span>
+          <span class="pill" id="totalSizePill">0 B</span>
+        </div>
+      </header>
+
+      <section class="panel path-bar">
+        <div class="path-info">
+          <span class="path-label">网盘目录</span>
+          <code id="folderPathText">/</code>
+        </div>
+        <button id="rescanBtn" class="btn-secondary">重新扫描</button>
+      </section>
+
+      <section class="panel controls">
+        <div class="controls-row">
+          <div class="btn-group">
+            <button id="startBrowserBtn" class="btn-primary" disabled>
+              选择本地目录并开始下载
+            </button>
+            <button id="pushAria2Btn" class="btn-outline" disabled>
+              全部推送到 Aria2
+            </button>
+            <button id="retryBtn" class="btn-secondary hidden">重试失败项</button>
+            <button id="stopBtn" class="btn-danger hidden">停止任务</button>
+          </div>
+
+          <div class="options-group">
+            <label class="opt">
+              并发数
+              <select id="concurrencySelect">
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="3">3</option>
+              </select>
+            </label>
+            <label class="opt checkbox-opt">
+              <input type="checkbox" id="skipExistingCheck" checked />
+              <span>跳过本地同名同大小文件</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="banner" class="banner hidden"></div>
+
+        <div class="overall-wrap">
+          <div class="overall-stats">
+            <span id="overallStatusText">等待开始</span>
+            <span id="overallSpeedText">0 B/s</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="overallBar" style="width: 0%;"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="table-head">
+          <span>文件相对路径（下载时自动创建子目录）</span>
+          <span>大小</span>
+          <span>状态 / 进度</span>
+        </div>
+        <div id="fileList" class="file-list">
+          <div class="empty">正在递归扫描网盘文件夹...</div>
+        </div>
+      </section>
+    </div>
+
+    <script src="downloader.js"></script>
+  </body>
+</html>

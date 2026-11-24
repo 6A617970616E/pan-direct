@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PanDirect</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="brand">
+          <div class="logo">PD</div>
+          <div>
+            <h1>PanDirect</h1>
+            <p class="subtitle">网盘直下助手</p>
+          </div>
+        </div>
+        <label class="switch" title="开启或暂停 UA 请求头注入">
+          <input type="checkbox" id="enabledToggle" />
+          <span class="slider"></span>
+        </label>
+      </header>
+
+      <section class="status-card">
+        <div class="status-row">
+          <span class="dot" id="statusDot"></span>
+          <span class="status-text" id="statusText">正在读取状态...</span>
+          <span class="badge" id="ruleBadge">0 规则</span>
+        </div>
+        <p class="hint">
+          自动为 <code>*.pcs.baidu.com</code> 与 <code>*.baidupcs.com</code> 注入合规 UA，支持单文件与整文件夹下载。
+        </p>
+      </section>
+
+      <!-- OAuth 显式授权（使用百度内置 oob，国内直连免配回调） -->
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">1. 百度 OAuth 授权（国内直连）</span>
+          <span class="pill" id="authPill">未授权</span>
+        </div>
+
+        <label class="label" for="appKeyInput">开放平台 AppKey（仅保存在本地，无需配置回调页）</label>
+        <div class="row">
+          <input type="text" id="appKeyInput" placeholder="粘贴 pan.baidu.com/union 的 AppKey" />
+          <button id="oauthBtn" class="btn-primary">百度授权</button>
+        </div>
+
+        <div class="row-between" id="authActionsRow" style="display: none;">
+          <span class="muted-sm" id="tokenExpireText"></span>
+          <button id="logoutBtn" class="btn-link danger" type="button">清除授权</button>
+        </div>
+        <div class="feedback" id="oauthFeedback"></div>
+      </section>
+
+      <!-- 下载方式与 Aria2 配置 -->
+      <section class="card">
+        <div class="card-title">2. 默认下载方式</div>
+        <div class="mode-switch">
+          <label class="mode-option">
+            <input type="radio" name="downloadMode" value="browser" checked />
+            <span>浏览器原生直下</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="downloadMode" value="aria2" />
+            <span>推送到 Aria2</span>
+          </label>
+        </div>
+
+        <details class="sub-details" id="aria2Details">
+          <summary class="clickable sub-summary">Aria2 RPC 配置</summary>
+          <div class="sub-body">
+            <label class="label" for="aria2UrlInput">RPC 地址（Motrix 默认端口 16800）</label>
+            <input type="text" id="aria2UrlInput" placeholder="http://localhost:6800/jsonrpc" />
+            <label class="label" for="aria2SecretInput" style="margin-top:6px;">RPC 密钥（无密码可留空）</label>
+            <div class="row">
+              <input type="password" id="aria2SecretInput" placeholder="可选：rpc-secret" />
+              <button id="saveAria2Btn" class="btn-secondary">保存</button>
+              <button id="testAria2Btn" class="btn-secondary">测试</button>
+            </div>
+            <div class="feedback" id="aria2Feedback"></div>
+          </div>
+        </details>
+      </section>
+
+      <!-- 快捷直链下载 -->
+      <details class="card settings">
+        <summary class="card-title clickable">快捷直链测试 & 高级设置</summary>
+        <div class="settings-body">
+          <label class="label" for="dlinkInput">粘贴 dlink 直链测试下载</label>
+          <textarea
+            id="dlinkInput"
+            rows="2"
+            placeholder="https://d.pcs.baidu.com/file/...&access_token=..."
+          ></textarea>
+          <div class="row">
+            <input type="text" id="filenameInput" placeholder="可选：文件名（如 demo.zip）" />
+            <button id="downloadBtn" class="btn-primary">下载</button>
+          </div>
+          <div class="feedback" id="downloadFeedback"></div>
+
+          <hr class="divider" />
+
+          <label class="label" for="uaInput">自定义下载 User-Agent</label>
+          <div class="row">
+            <input type="text" id="uaInput" placeholder="pan.baidu.com" />
+            <button id="saveUaBtn" class="btn-secondary">保存</button>
+          </div>
+          <div class="feedback" id="uaFeedback"></div>
+        </div>
+      </details>
+
+      <footer class="footer">
+        <span id="versionText">v0.3.0</span>
+        <span>打开 pan.baidu.com 点右下角「PanDirect 直下」</span>
+      </footer>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

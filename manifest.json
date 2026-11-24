@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "PanDirect",
+  "short_name": "PanDirect",
+  "version": "0.3.0",
+  "description": "轻量网盘直下助手：基于百度网盘开放平台官方 OAuth 与 API，支持单文件与整文件夹浏览器原生直下及 Aria2 推送。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "PanDirect - 网盘直下助手",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "declarativeNetRequest",
+    "downloads",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://*.baidu.com/*",
+    "*://*.baidupcs.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pan.baidu.com/*"
+      ],
+      "js": [
+        "content-pan.js"
+      ],
+      "css": [
+        "content-pan.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://localhost/*"
+      ],
+      "js": [
+        "content-bridge.js"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}
