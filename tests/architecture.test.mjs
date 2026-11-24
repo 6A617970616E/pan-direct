@@ -11,6 +11,7 @@ import {
   sanitizeRelativePath,
   normalizeDirectoryPath,
 } from "../core/utils.js";
+import { buildAria2HeaderOptions } from "../core/aria2.js";
 import { createBackgroundRuntime } from "../core/background-router.js";
 import {
   baiduProvider,
@@ -138,6 +139,26 @@ test("core/utils sanitizes filenames and relative paths safely", () => {
   );
   assert.equal(normalizeDirectoryPath("/homm3///"), "/homm3");
   assert.equal(normalizeDirectoryPath("relative"), "/");
+});
+
+test("core/aria2 maps User-Agent and Referer to dedicated Aria2 options without duplicating them in header", () => {
+  assert.deepEqual(buildAria2HeaderOptions(["User-Agent: pan.baidu.com"]), {
+    "user-agent": "pan.baidu.com",
+  });
+
+  assert.deepEqual(
+    buildAria2HeaderOptions([
+      "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/2.5.56",
+      "Referer: https://pan.quark.cn/",
+      "Cookie: __puus=abc; __uid=1",
+    ]),
+    {
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/2.5.56",
+      referer: "https://pan.quark.cn/",
+      header: ["Cookie: __puus=abc; __uid=1"],
+    }
+  );
 });
 
 test("Baidu provider enforces strict download domain allowlist", () => {

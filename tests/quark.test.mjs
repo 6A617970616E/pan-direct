@@ -16,6 +16,7 @@ import {
   normalizeQuarkDirId,
   quarkProvider,
   sanitizeCookieInput,
+  selectQuarkCookiesForUrl,
 } from "../providers/community/quark/provider.js";
 import { buildEdition } from "../scripts/build.mjs";
 
@@ -28,6 +29,7 @@ function createMockChrome(initialLocal = {}, mockCookies = []) {
   const sessionStore = {};
   let dynamicRules = [];
   const createdTabs = [];
+  const cookieChangeListeners = new Set();
 
   const mockChrome = {
     runtime: {
@@ -36,7 +38,19 @@ function createMockChrome(initialLocal = {}, mockCookies = []) {
       getURL: (p) => `chrome-extension://test-ext-id/${p.replace(/^\/+/, "")}`,
     },
     cookies: {
-      getAll: async () => [...mockCookies],
+      getAll: async (filter) => {
+        if (typeof mockCookies === "function") {
+          return mockCookies(filter);
+        }
+        return [...mockCookies];
+      },
+      onChanged: {
+        addListener: (fn) => cookieChangeListeners.add(fn),
+        removeListener: (fn) => cookieChangeListeners.delete(fn),
+        emit: (changeInfo) => {
+          for (const fn of cookieChangeListeners) fn(changeInfo);
+        },
+      },
     },
     storage: {
       local: {
@@ -349,13 +363,34 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
   let simulate23018 = false;
   let capturedAria2Body = null;
   let preflightCredentials = null;
+  let emitRotatedPuus = "";
+  let flushCalledCount = 0;
 
   globalThis.fetch = async (url, init = {}) => {
     const strUrl = String(url);
 
+    if (strUrl.includes("/1/clouddrive/auth/pc/flush")) {
+      flushCalledCount++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: 200, code: 0 }),
+      };
+    }
+
     if (strUrl.includes("/1/clouddrive/file/download")) {
       assert.equal(init.method, "POST");
       assert.equal(init.credentials, "include");
+      if (emitRotatedPuus && globalThis.chrome?.cookies?.onChanged?.emit) {
+        globalThis.chrome.cookies.onChanged.emit({
+          removed: false,
+          cookie: {
+            name: "__puus",
+            value: emitRotatedPuus,
+            domain: ".quark.cn",
+          },
+        });
+      }
       if (simulate23018) {
         return {
           ok: true,
@@ -423,7 +458,7 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     assert.equal(preflightCredentials, "include");
     assert.ok(dlRes.results[0].frameDownloadUrl.includes("dl-pc-zb.pds.quark.cn"));
 
-    // 2. Trusted downloader stream URL returns credentials: include
+    // 2. Trusted downloader stream URL returns credentials: include (and never leaks internal cookie hints)
     const streamRes = await runtime.handleMessage(
       {
         type: "PANDIRECT_GET_FILE_STREAM_URL",
@@ -437,13 +472,14 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     );
     assert.equal(streamRes.ok, true);
     assert.equal(streamRes.credentials, "include");
+    assert.equal(streamRes._rotatedPuus, undefined);
 
-    // 3. Aria2 push automatically forwards ephemeral browser session cookies without persisting them
+    // 3. Aria2 push maps User-Agent & Referer to native Aria2 options and forwards ephemeral cookies
     const { mockChrome: cookieChrome, state: cookieState } = createMockChrome(
       { enabled: true },
       [
-        { name: "__puus", value: "live_session_puus" },
-        { name: "__uid", value: "uid_123" },
+        { name: "__puus", value: "live_session_puus", domain: ".quark.cn", path: "/", expirationDate: 2000000000 },
+        { name: "__uid", value: "uid_123", domain: ".quark.cn", path: "/", expirationDate: 2000000000 },
       ]
     );
     globalThis.chrome = cookieChrome;
@@ -459,19 +495,51 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     assert.equal(autoAriaRes.gid, "gid_quark_01");
     const autoOpts = capturedAria2Body.params[1];
     assert.equal(autoOpts.out, "Movies/movie.mkv");
-    assert.ok(
-      autoOpts.header.some(
-        (h) => h.startsWith("User-Agent: ") && h.includes("quark-cloud-drive/")
-      )
-    );
-    assert.ok(autoOpts.header.includes("Referer: https://pan.quark.cn/"));
-    assert.ok(
-      autoOpts.header.includes("Cookie: __puus=live_session_puus; __uid=uid_123")
-    );
+    assert.ok(autoOpts["user-agent"].includes("quark-cloud-drive/"));
+    assert.equal(autoOpts.referer, "https://pan.quark.cn/");
+    assert.deepEqual(autoOpts.header, [
+      "Cookie: __puus=live_session_puus; __uid=uid_123",
+    ]);
     // Must NEVER persist auto-read browser cookies to storage
     assert.equal(cookieState.localStore.providerConfigs?.quark?.aria2Cookie, undefined);
 
+    // 3b. Live __puus Set-Cookie rotation observed during POST /file/download overrides stale cookie jar value
+    emitRotatedPuus = "fresh_rotated_puus_999";
+    const rotatedRes = await autoRuntime.handleMessage({
+      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+      provider: "quark",
+      itemId: "fid_demo_1",
+      relativePath: "Movies/movie.mkv",
+    });
+    emitRotatedPuus = "";
+    assert.equal(rotatedRes.ok, true);
+    assert.deepEqual(capturedAria2Body.params[1].header, [
+      "Cookie: __puus=fresh_rotated_puus_999; __uid=uid_123",
+    ]);
+
+    // 3c. Missing __puus triggers one-shot auth/pc/flush before failing
+    let flushedReady = false;
+    const { mockChrome: flushChrome } = createMockChrome({ enabled: true }, () => {
+      if (flushCalledCount > 0) flushedReady = true;
+      return flushedReady
+        ? [{ name: "__puus", value: "flushed_puus_ok", domain: ".quark.cn", path: "/" }]
+        : [{ name: "__uid", value: "uid_only", domain: ".quark.cn", path: "/" }];
+    });
+    globalThis.chrome = flushChrome;
+    const flushRuntime = createBackgroundRuntime([baiduProvider, quarkProvider]);
+    const flushAriaRes = await flushRuntime.handleMessage({
+      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+      provider: "quark",
+      itemId: "fid_demo_1",
+    });
+    assert.equal(flushAriaRes.ok, true);
+    assert.equal(flushCalledCount, 1);
+    assert.deepEqual(capturedAria2Body.params[1].header, [
+      "Cookie: __puus=flushed_puus_ok",
+    ]);
+
     // 4. Refuse auto-sending browser session cookies to non-local public Aria2 RPC URLs
+    globalThis.chrome = cookieChrome;
     await autoRuntime.handleMessage({
       type: "PANDIRECT_SET_CONFIG",
       aria2Url: "https://remote.example.com:6800/jsonrpc",
@@ -496,6 +564,22 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     assert.equal(isTrustedLocalAria2Url("http://192.168.1.10:6800/jsonrpc"), true);
     assert.equal(isTrustedLocalAria2Url("https://evil.example/jsonrpc"), false);
 
+    // 5b. Cookie selector drops expired cookies, avoids unrelated subdomain leakage, and prefers newest/most-specific __puus
+    const selectedHeader = selectQuarkCookiesForUrl({
+      nowSec: 1000,
+      targetCookies: [
+        { name: "__puus", value: "old_root_puus", domain: ".quark.cn", path: "/", expirationDate: 2000 },
+        { name: "__puus", value: "newer_drive_puus", domain: ".drive.quark.cn", path: "/", expirationDate: 2500 },
+        { name: "expired_key", value: "dead", domain: ".quark.cn", path: "/", expirationDate: 500 },
+        { name: "__pus", value: "pus_val", domain: ".quark.cn", path: "/", expirationDate: 3000 },
+      ],
+      apiCookies: [
+        { name: "__puus", value: "api_freshest_puus", domain: "drive-pc.quark.cn", path: "/", expirationDate: 4000 },
+        { name: "api_only_noise", value: "ignore_me", domain: "drive-pc.quark.cn", path: "/", expirationDate: 4000 },
+      ],
+    });
+    assert.equal(selectedHeader, "__puus=api_freshest_puus; __pus=pus_val");
+
     globalThis.chrome = mockChrome;
     await runtime.handleMessage({
       type: "PANDIRECT_SET_CONFIG",
@@ -509,7 +593,9 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
       relativePath: "Movies/movie.mkv",
     });
     assert.equal(ariaRes.ok, true);
-    assert.ok(capturedAria2Body.params[1].header.includes("Cookie: __puus=demo_cookie"));
+    assert.deepEqual(capturedAria2Body.params[1].header, [
+      "Cookie: __puus=demo_cookie",
+    ]);
 
     // 6. code=23018 returns clear guidance
     simulate23018 = true;

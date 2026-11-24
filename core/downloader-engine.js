@@ -146,6 +146,7 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
                     ? await provider.getAria2Headers(providerConfig, {
                         url: target.url,
                         coreConfig,
+                        target,
                       })
                     : []);
                 return pushToAria2({
@@ -229,6 +230,7 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
         ? await provider.getAria2Headers(providerConfig, {
             url: resolved.url,
             coreConfig,
+            target: resolved,
           })
         : []);
 

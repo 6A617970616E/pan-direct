@@ -299,42 +299,177 @@ export function isTrustedLocalAria2Url(rawUrl) {
   }
 }
 
+function compareCookiePriority(a, b) {
+  const domA = String(a?.domain || "").replace(/^\./, "").length;
+  const domB = String(b?.domain || "").replace(/^\./, "").length;
+  if (domB !== domA) return domB - domA;
+
+  const pathA = String(a?.path || "").length;
+  const pathB = String(b?.path || "").length;
+  if (pathB !== pathA) return pathB - pathA;
+
+  const expA = Number(a?.expirationDate) || 0;
+  const expB = Number(b?.expirationDate) || 0;
+  return expB - expA;
+}
+
+function isCookieExpired(cookie, nowSec) {
+  return (
+    typeof cookie?.expirationDate === "number" &&
+    cookie.expirationDate > 0 &&
+    cookie.expirationDate <= nowSec
+  );
+}
+
+function sanitizeCookiePair(name, value) {
+  const cleanName = String(name || "").replace(/[\r\n;=]/g, "").trim();
+  const cleanVal = String(value ?? "").replace(/[\r\n]+/g, "").trim();
+  if (!cleanName) return null;
+  return { name: cleanName, value: cleanVal, pair: `${cleanName}=${cleanVal}` };
+}
+
+/**
+ * Selects exact-scope Quark cookies for Aria2 download requests without pulling in
+ * unrelated *.quark.cn subdomains (such as pan.quark.cn or ai.quark.cn).
+ * Prioritizes:
+ * 1. Freshly rotated `__puus` observed during `POST /1/clouddrive/file/download`
+ * 2. Most-specific domain / longest path / latest expirationDate matching the download URL
+ * 3. Newer `__puus` from `drive-pc.quark.cn` if rotated host-only
+ */
+export function selectQuarkCookiesForUrl({
+  targetCookies = [],
+  apiCookies = [],
+  fallbackPuusCookies = [],
+  rotatedPuus = "",
+  nowSec = Date.now() / 1000,
+} = {}) {
+  const filterAndSort = (list) =>
+    (Array.isArray(list) ? list : [])
+      .filter((c) => c && !isCookieExpired(c, nowSec))
+      .sort(compareCookiePriority);
+
+  const validTarget = filterAndSort(targetCookies);
+  const validApi = filterAndSort(apiCookies);
+  const validFallbackPuus = filterAndSort(fallbackPuusCookies);
+
+  const byName = new Map();
+  let targetPuusCookie = null;
+
+  // Match Chrome's exact cookie scope for the download URL (fall back to API URL only if empty)
+  const baseCookies = validTarget.length > 0 ? validTarget : validApi;
+  for (const c of baseCookies) {
+    const entry = sanitizeCookiePair(c.name, c.value);
+    if (!entry || byName.has(entry.name)) continue;
+    byName.set(entry.name, entry.pair);
+    if (entry.name === "__puus") {
+      targetPuusCookie = c;
+    }
+  }
+
+  // If drive-pc.quark.cn holds a strictly newer __puus (or target had none), upgrade __puus
+  const apiPuusCookie = validApi.find(
+    (c) => String(c?.name || "").trim() === "__puus"
+  );
+  if (apiPuusCookie) {
+    const targetExp = Number(targetPuusCookie?.expirationDate) || 0;
+    const apiExp = Number(apiPuusCookie.expirationDate) || 0;
+    if (!targetPuusCookie || (apiExp > 0 && apiExp > targetExp)) {
+      const entry = sanitizeCookiePair("__puus", apiPuusCookie.value);
+      if (entry) {
+        byName.set("__puus", entry.pair);
+      }
+    }
+  }
+
+  // Highest priority: exact __puus rotated by the file/download call that minted this URL
+  const cleanRotated = String(rotatedPuus || "").replace(/[\r\n]+/g, "").trim();
+  if (cleanRotated) {
+    byName.set("__puus", `__puus=${cleanRotated}`);
+  }
+
+  // Last-resort fallback: ONLY __puus from quark.cn if still missing
+  if (!byName.has("__puus") && validFallbackPuus.length > 0) {
+    const bestPuus = validFallbackPuus.find(
+      (c) => String(c?.name || "").trim() === "__puus"
+    );
+    if (bestPuus) {
+      const entry = sanitizeCookiePair("__puus", bestPuus.value);
+      if (entry) {
+        byName.set("__puus", entry.pair);
+      }
+    }
+  }
+
+  return Array.from(byName.values()).join("; ");
+}
+
+async function flushQuarkPuusCookie() {
+  try {
+    const flushUrl = `${QUARK_API_BASE}/auth/pc/flush?pr=ucpro&fr=pc`;
+    await fetch(flushUrl, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        Accept: "application/json, text/plain, */*",
+      },
+    });
+  } catch {
+    // non-fatal; caller re-checks cookie jar
+  }
+}
+
 /**
  * Reads active Quark session cookies from the browser cookie jar on-demand
  * exclusively for forwarding to the user's local Aria2 RPC. Never persisted or logged.
  */
-async function readQuarkSessionCookieHeader(targetUrl) {
+async function readQuarkSessionCookieHeader(targetUrl, { rotatedPuus = "" } = {}) {
   if (typeof chrome === "undefined" || !chrome.cookies?.getAll) {
     return "";
   }
 
-  const byName = new Map();
-  const collect = (cookies) => {
-    for (const c of cookies || []) {
-      const name = String(c?.name || "").replace(/[\r\n;=]/g, "").trim();
-      const val = String(c?.value ?? "").replace(/[\r\n]+/g, "");
-      if (!name || byName.has(name)) continue;
-      byName.set(name, `${name}=${val}`);
-    }
-  };
-
-  // Prefer cookies matching the exact download URL (captures newly rotated __puus)
+  let targetCookies = [];
   if (targetUrl) {
     try {
-      collect(await chrome.cookies.getAll({ url: targetUrl }));
+      targetCookies = await chrome.cookies.getAll({ url: targetUrl });
     } catch {
-      // fall through to domain lookup
+      targetCookies = [];
     }
   }
 
-  // Merge root quark.cn cookies as fallback without overwriting exact-URL matches
+  let apiCookies = [];
   try {
-    collect(await chrome.cookies.getAll({ domain: "quark.cn" }));
+    apiCookies = await chrome.cookies.getAll({
+      url: `${QUARK_API_BASE}/file/download`,
+    });
   } catch {
-    // ignore
+    apiCookies = [];
   }
 
-  return Array.from(byName.values()).join("; ");
+  let header = selectQuarkCookiesForUrl({
+    targetCookies,
+    apiCookies,
+    rotatedPuus,
+  });
+
+  if (!/(?:^|;\s*)__puus=/.test(header)) {
+    let fallbackPuusCookies = [];
+    try {
+      fallbackPuusCookies = await chrome.cookies.getAll({
+        domain: "quark.cn",
+        name: "__puus",
+      });
+    } catch {
+      fallbackPuusCookies = [];
+    }
+    header = selectQuarkCookiesForUrl({
+      targetCookies,
+      apiCookies,
+      fallbackPuusCookies,
+      rotatedPuus,
+    });
+  }
+
+  return header;
 }
 
 export const quarkProvider = defineProvider({
@@ -378,7 +513,7 @@ export const quarkProvider = defineProvider({
     return buildQuarkDownloadRequestHeaders(config.userAgent);
   },
 
-  async getAria2Headers(config, { url, coreConfig } = {}) {
+  async getAria2Headers(config, { url, coreConfig, target } = {}) {
     const headers = [
       `User-Agent: ${config.userAgent}`,
       `Referer: ${QUARK_REFERER}`,
@@ -394,7 +529,14 @@ export const quarkProvider = defineProvider({
         );
       }
 
-      cookieHeader = await readQuarkSessionCookieHeader(url);
+      const rotatedPuus = target?._rotatedPuus || "";
+      cookieHeader = await readQuarkSessionCookieHeader(url, { rotatedPuus });
+
+      if (!cookieHeader || !/(?:^|;\s*)__puus=/.test(cookieHeader)) {
+        await flushQuarkPuusCookie();
+        cookieHeader = await readQuarkSessionCookieHeader(url, { rotatedPuus });
+      }
+
       if (!cookieHeader || !/(?:^|;\s*)__puus=/.test(cookieHeader)) {
         throw new Error(
           "未读取到有效的夸克登录 Cookie（缺少 __puus），请确认已在当前浏览器登录 pan.quark.cn，并刷新扩展授权 cookies 权限后重试。"
@@ -743,30 +885,63 @@ export const quarkProvider = defineProvider({
       url.searchParams.set("ut", "");
       url.searchParams.set("guid", "");
 
-      const res = await fetch(url.toString(), {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/plain, */*",
-        },
-        body: JSON.stringify({ fids: batch }),
-      });
+      // Observe ephemeral __puus Set-Cookie rotation triggered by this file/download request
+      let rotatedPuus = "";
+      const canObserveCookies =
+        typeof chrome !== "undefined" &&
+        typeof chrome.cookies?.onChanged?.addListener === "function" &&
+        typeof chrome.cookies?.onChanged?.removeListener === "function";
+      const onCookieChanged = (changeInfo) => {
+        const cookie = changeInfo?.cookie;
+        if (
+          !changeInfo?.removed &&
+          cookie?.name === "__puus" &&
+          typeof cookie?.domain === "string" &&
+          cookie.domain.toLowerCase().endsWith("quark.cn") &&
+          cookie?.value
+        ) {
+          rotatedPuus = String(cookie.value).replace(/[\r\n]+/g, "").trim();
+        }
+      };
 
-      const data = await parseJsonSafe(res, "获取夸克下载直链");
+      if (canObserveCookies) {
+        chrome.cookies.onChanged.addListener(onCookieChanged);
+      }
+
+      let data;
+      try {
+        const res = await fetch(url.toString(), {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/plain, */*",
+          },
+          body: JSON.stringify({ fids: batch }),
+        });
+
+        data = await parseJsonSafe(res, "获取夸克下载直链");
+      } finally {
+        if (canObserveCookies) {
+          chrome.cookies.onChanged.removeListener(onCookieChanged);
+        }
+      }
+
       const list = Array.isArray(data?.data)
         ? data.data
         : Array.isArray(data?.data?.list)
         ? data.data.list
         : [];
-      combined.push(...list);
+      for (const item of list) {
+        combined.push({ item, rotatedPuus });
+      }
     }
 
     if (combined.length === 0) {
       throw new Error("未获取到夸克文件下载链接，请确认文件存在且已登录夸克网盘。");
     }
 
-    return combined.map((item) => {
+    return combined.map(({ item, rotatedPuus }) => {
       const fid = String(item.fid);
       const downloadUrl = item.download_url || null;
       return {
@@ -775,6 +950,7 @@ export const quarkProvider = defineProvider({
         filename: item.file_name,
         size: Number(item.size) || 0,
         url: downloadUrl,
+        ...(rotatedPuus ? { _rotatedPuus: rotatedPuus } : {}),
         error: downloadUrl
           ? undefined
           : "该条目未返回下载直链（可能是文件夹或无权限）",

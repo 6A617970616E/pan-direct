@@ -2,6 +2,43 @@ import { DEFAULT_CORE_CONFIG } from "./constants.js";
 import { sanitizeFilename, sanitizeRelativePath } from "./utils.js";
 
 /**
+ * Maps standard HTTP header strings ("Name: value") into Aria2 RPC options.
+ * Extracts User-Agent and Referer into Aria2's dedicated `user-agent` / `referer`
+ * options so Aria2 never emits its default `aria2/<ver>` UA (including proxy CONNECT)
+ * or duplicates headers, while preserving remaining headers (e.g. Cookie) in `header`.
+ */
+export function buildAria2HeaderOptions(headers = []) {
+  const options = {};
+  const customHeaders = [];
+
+  for (const raw of headers || []) {
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim();
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx <= 0) continue;
+
+    const name = trimmed.slice(0, colonIdx).trim();
+    const value = trimmed.slice(colonIdx + 1).trim();
+    if (!name || !value) continue;
+
+    const lower = name.toLowerCase();
+    if (lower === "user-agent") {
+      options["user-agent"] = value;
+    } else if (lower === "referer") {
+      options.referer = value;
+    } else {
+      customHeaders.push(`${name}: ${value}`);
+    }
+  }
+
+  if (customHeaders.length > 0) {
+    options.header = customHeaders;
+  }
+
+  return options;
+}
+
+/**
  * Push a download URL to local Aria2 / Motrix via JSON-RPC 2.0.
  */
 export async function pushToAria2({
@@ -16,10 +53,7 @@ export async function pushToAria2({
     throw new Error("请先在 PanDirect 设置中填写 Aria2 RPC 地址。");
   }
 
-  const aria2Options = {};
-  if (Array.isArray(headers) && headers.length > 0) {
-    aria2Options.header = headers;
-  }
+  const aria2Options = buildAria2HeaderOptions(headers);
 
   // Preserve subdirectory path in Aria2 when downloading folders
   const safeOut = relativePath
