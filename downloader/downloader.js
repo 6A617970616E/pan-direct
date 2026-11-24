@@ -1,6 +1,7 @@
 const params = new URLSearchParams(window.location.search);
 const targetProviderId = params.get("provider") || "baidu";
 const targetFolderPath = params.get("path") || "/";
+const targetFolderLabel = params.get("label") || "";
 const preferredMode = params.get("mode") || "browser";
 
 const folderPathText = document.getElementById("folderPathText");
@@ -20,15 +21,11 @@ const overallSpeedText = document.getElementById("overallSpeedText");
 const overallBar = document.getElementById("overallBar");
 const fileListEl = document.getElementById("fileList");
 
-const PROVIDER_LABELS = {
-  baidu: "百度网盘",
-  pan123: "123云盘",
-  quark: "夸克网盘",
-};
-
-folderPathText.textContent = targetFolderPath;
+const initialDisplayLabel =
+  targetFolderLabel || (targetFolderPath === "0" ? "/" : targetFolderPath);
+folderPathText.textContent = initialDisplayLabel;
 if (providerPill) {
-  providerPill.textContent = PROVIDER_LABELS[targetProviderId] || targetProviderId;
+  providerPill.textContent = targetProviderId;
 }
 
 let tasks = [];
@@ -202,7 +199,7 @@ async function scanFolder() {
   totalBytes = 0;
   fileCountPill.textContent = "扫描中...";
   totalSizePill.textContent = "0 B";
-  fileListEl.innerHTML = `<div class="empty">正在递归扫描 ${targetFolderPath} ...</div>`;
+  fileListEl.innerHTML = `<div class="empty">正在递归扫描 ${initialDisplayLabel} ...</div>`;
   setButtonsState();
 
   try {
@@ -217,6 +214,14 @@ async function scanFolder() {
       fileCountPill.textContent = "扫描失败";
       fileListEl.innerHTML = `<div class="empty">扫描失败，请确认已完成网盘授权且有目录权限。</div>`;
       return;
+    }
+
+    if (res.providerName && providerPill) {
+      providerPill.textContent = res.providerName;
+    }
+
+    if (res.displayPath && !targetFolderLabel) {
+      folderPathText.textContent = res.displayPath;
     }
 
     tasks = (res.files || []).map((f) => ({
@@ -317,6 +322,7 @@ async function downloadSingleFileToDisk(task, rootDirHandle) {
 
     const res = await fetch(meta.url, {
       method: "GET",
+      credentials: meta.credentials || "omit",
       redirect: "follow",
       signal: controller.signal,
     });

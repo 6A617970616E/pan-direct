@@ -8,7 +8,7 @@ import { sanitizeFilename } from "./utils.js";
  * - Aria2 push with provider headers & preserved relative folder paths
  */
 export function createDownloaderEngine({ registry, storage, dnr }) {
-  async function probeAndResolveDownloadUrl(url) {
+  async function probeAndResolveDownloadUrl(url, { credentials = "omit" } = {}) {
     await dnr.syncAllDnrRules();
 
     const controller = new AbortController();
@@ -17,6 +17,7 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
       const res = await fetch(url, {
         method: "GET",
         headers: { Range: "bytes=0-0" },
+        credentials,
         redirect: "follow",
         signal: controller.signal,
       });
@@ -70,7 +71,11 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
       throw new Error("PanDirect 当前已暂停，请先在插件弹窗中开启下载规则。");
     }
 
-    const { resolvedUrl, hasAttachment } = await probeAndResolveDownloadUrl(url);
+    const credentials = provider.downloadCredentials || "omit";
+    const { resolvedUrl, hasAttachment } = await probeAndResolveDownloadUrl(
+      url,
+      { credentials }
+    );
     const requestHeaders =
       typeof provider.getDownloadRequestHeaders === "function"
         ? provider.getDownloadRequestHeaders(providerConfig)
@@ -195,6 +200,7 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
       filename: resolved.filename,
       size: resolved.size,
       url: resolved.url,
+      credentials: provider.downloadCredentials || "omit",
     };
   }
 

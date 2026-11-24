@@ -41,18 +41,21 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
 │       └── content-drawer.css       # 悬浮抽屉样式
 ├── providers/
 │   ├── index.js                     # 静态 ES Provider 汇总（构建时按版本自动生成）
+│   ├── popup-index.js               # 静态 ES 弹窗卡片注册（Store 版为空，Community 版含夸克卡片）
 │   ├── base-provider.js             # Provider 契约定义与校验（defineProvider）
 │   ├── official/
 │   │   └── baidu/                   # 百度网盘官方适配器（provider.json + provider.js + content.js）
 │   └── community/
-│       └── README.md                # 社区实验性适配器接入规范（仅打入 community.zip）
-├── popup/                           # 扩展弹窗（含 Edition 徽章与启用网盘提示）
-├── downloader/                      # 独立文件夹流式下载管理页（支持 ?provider=）
+│       ├── README.md                # 社区实验性适配器接入规范（仅打入 community.zip）
+│       └── quark/                   # 夸克网盘社区适配器（provider.json + provider.js + content.js + popup-card.js）
+├── popup/                           # 扩展弹窗（含 Edition 徽章、已启用网盘提示与按版本动态卡片插槽）
+├── downloader/                      # 独立文件夹流式下载管理页（支持 ?provider=&label= 与 per-provider credentials）
 ├── icons/                           # 16 / 48 / 128 PNG 图标
 ├── scripts/
 │   └── build.mjs                    # 零依赖双产物打包与隔离校验脚本（store.zip / community.zip）
 ├── tests/
-│   └── architecture.test.mjs        # Node 内置单元测试与 Store/Community 隔离自动化测试
+│   ├── architecture.test.mjs        # 核心模块、百度适配器与双产物隔离测试
+│   └── quark.test.mjs               # 夸克适配器全链路与 Store 零残留隔离测试
 ├── package.json                     # 零依赖脚本入口（npm run build / npm test）
 ├── test-page.html                   # 网页桥接本地测试页（不打入发布包）
 ├── README.md
@@ -82,12 +85,17 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
    - 正确做法：用基础接口 `xpan/file?method=list` 做队列 BFS 分页递归遍历（实测个人开发态应用可直接读取全盘目录）。
 
 5. **MV3 Service Worker 禁用动态 `import()`**
-   - `providers/index.js` 必须使用静态 ES `import` 导出当前版本启用的适配器，由 `scripts/build.mjs` 在构建 `store` / `community` 产物时按 `provider.json` 自动生成。
+   - `providers/index.js` 与 `providers/popup-index.js` 必须使用静态 ES `import` 导出当前版本启用的适配器，由 `scripts/build.mjs` 在构建 `store` / `community` 产物时按 `provider.json` 自动生成。
 
-6. **安全与合规边界**
+6. **夸克网盘社区版关键要点（仅 `community.zip`）**
+   - 夸克 `POST /1/clouddrive/file/download` 用普通浏览器 UA 会触发 `code=23018`（强制要求桌面客户端），必须由 DNR 为扩展发起的该接口请求与 `||pds.quark.cn/` 下载节点注入 `quark-cloud-drive/...` 客户端 UA 及 `Referer: https://pan.quark.cn/`。
+   - 夸克下载节点（`*.pds.quark.cn`）依赖 OSS callback 校验浏览器会话 Cookie，因此 1 字节预检与 `downloader.html` 流式 `fetch` 均需按 Provider 声明透传 `credentials: "include"`，且 `||pds.quark.cn/` DNR 规则**不可**排除 `pan.quark.cn`（以保障页面隐藏 `<iframe>` 命中）。
+   - 严格保持零 `cookies` 权限，绝不静默抓取/导出浏览器 Cookie；仅当用户主动推送本机 Aria2 时可选手动配置 `aria2Cookie`。
+
+7. **安全与合规边界**
    - 仓库内**绝不硬编码**任何个人 `AppKey` / `SecretKey` / `access_token`。
-   - **绝不做**后台静默自动确认 OAuth 授权或读取导出 `BDUSS` Cookie。
-   - 下载域名严格白名单校验（`*.pcs.baidu.com` / `*.pcsdata.baidu.com` / `*.baidupcs.com`），`PANDIRECT_GET_FILE_STREAM_URL` 仅允许来自 `downloader/` 扩展页的调用。
+   - **绝不做**后台静默自动确认 OAuth 授权或读取导出 `BDUSS` / `__puus` Cookie。
+   - 下载域名严格按 Provider 白名单校验，`PANDIRECT_GET_FILE_STREAM_URL` 仅允许来自 `downloader/` 扩展页的调用。
 
 ---
 
@@ -101,7 +109,8 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
      - **123云盘**（官方开发者平台 `https://www.123pan.cn/developer`，文档 `https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced`）。
    - 优先同时上架 **Edge Add-ons（免费、中国大陆直连）** 与 **Chrome Web Store（$5）**。
 2. **社区版（Community Edition → GitHub Releases）**
-   - 在 `providers/community/` 中支持依赖浏览器网页会话的实验性网盘（如夸克网盘 `pan.quark.cn` 等），通过 `npm run build` 分离输出 `dist/store.zip` 与 `dist/community.zip`，不混入商店审核包。
+   - 在 `providers/community/` 中支持依赖浏览器网页会话的实验性网盘（已实现夸克网盘 `providers/community/quark/`，待 Chrome/Edge 真机联调验证），通过 `npm run build` 分离输出 `dist/store.zip` 与 `dist/community.zip`，`store.zip` 零社区代码与权限残留。
 3. **待打磨体验项**
    - ✅ 已完成：重构 `core/` + `providers/official/` + `providers/community/` 双构建打包脚本与自动化测试；
+   - 🚧 进行中（分支 `feat/quark-provider`）：夸克网盘社区适配器（单测与隔离校验通过，待真机实测验证）；
    - ⬜ 待做：接入 123云盘官方 Provider、补充「复制直链 / 复制 curl 命令」、弹窗显示百度账号昵称（`xpan/nas?method=uinfo`）、隐私政策文档（商店提审必需）。

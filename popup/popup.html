@@ -56,6 +56,9 @@
         <div class="feedback" id="oauthFeedback"></div>
       </section>
 
+      <!-- 按当前构建版本动态挂载的额外网盘适配器卡片 -->
+      <div id="extraProviderCards" class="extra-provider-cards"></div>
+
       <!-- 下载方式与 Aria2 配置 -->
       <section class="card">
         <div class="card-title">2. 默认下载方式</div>
@@ -90,7 +93,7 @@
       <details class="card settings">
         <summary class="card-title clickable">快捷直链测试 & 高级设置</summary>
         <div class="settings-body">
-          <label class="label" for="dlinkInput">粘贴 dlink 直链测试下载</label>
+          <label class="label" for="dlinkInput">粘贴直链测试下载</label>
           <textarea
             id="dlinkInput"
             rows="2"
@@ -104,7 +107,7 @@
 
           <hr class="divider" />
 
-          <label class="label" for="uaInput">自定义下载 User-Agent</label>
+          <label class="label" for="uaInput">百度网盘下载 User-Agent</label>
           <div class="row">
             <input type="text" id="uaInput" placeholder="pan.baidu.com" />
             <button id="saveUaBtn" class="btn-secondary">保存</button>
@@ -119,6 +122,6 @@
       </footer>
     </div>
 
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

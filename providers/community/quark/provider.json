@@ -1,0 +1,33 @@
+{
+  "id": "quark",
+  "name": "夸克网盘",
+  "tier": "community",
+  "enabled": true,
+  "description": "社区实验性夸克网盘适配器：复用浏览器已登录会话，通过 DNR 注入客户端 UA 获取单文件与整文件夹直链",
+  "entry": "provider.js",
+  "exportName": "quarkProvider",
+  "popupEntry": "popup-card.js",
+  "popupExportName": "renderQuarkPopupCard",
+  "manifest": {
+    "host_permissions": [
+      "*://*.quark.cn/*",
+      "*://*.uc.cn/*"
+    ],
+    "content_scripts": [
+      {
+        "matches": [
+          "https://pan.quark.cn/*",
+          "https://drive.quark.cn/*"
+        ],
+        "js": [
+          "core/ui/content-drawer.js",
+          "providers/community/quark/content.js"
+        ],
+        "css": [
+          "core/ui/content-drawer.css"
+        ],
+        "run_at": "document_idle"
+      }
+    ]
+  }
+}

@@ -368,7 +368,6 @@ test("Dual-artifact build strictly isolates community providers out of store.zip
       "background.js",
       "LICENSE",
       "core",
-      "providers",
       "popup",
       "downloader",
       "icons",
@@ -377,6 +376,16 @@ test("Dual-artifact build strictly isolates community providers out of store.zip
         recursive: true,
       });
     }
+    fs.mkdirSync(path.join(tempRoot, "providers"), { recursive: true });
+    fs.cpSync(
+      path.join(REPO_ROOT, "providers", "base-provider.js"),
+      path.join(tempRoot, "providers", "base-provider.js")
+    );
+    fs.cpSync(
+      path.join(REPO_ROOT, "providers", "official"),
+      path.join(tempRoot, "providers", "official"),
+      { recursive: true }
+    );
 
     // Inject a synthetic community provider to prove strict store/community separation
     const mockCommunityDir = path.join(

@@ -1,15 +1,23 @@
 /**
  * Reusable floating drawer UI shared across all netdisk content scripts.
+ * Supports both path-based providers and ID-tree providers.
  * Provider-specific content scripts call `window.PanDirectDrawer.mount(adapter)`.
  */
 (() => {
   if (window.PanDirectDrawer) return;
 
-  function getParentDir(dir) {
+  function getParentPath(dir) {
     const clean = (dir || "/").replace(/\/+$/, "");
     if (!clean || clean === "/") return "/";
     const idx = clean.lastIndexOf("/");
     return idx <= 0 ? "/" : clean.slice(0, idx);
+  }
+
+  function joinDisplayPath(baseDisplay, name) {
+    const cleanBase = (baseDisplay || "/").replace(/\/+$/, "");
+    if (!name) return cleanBase || "/";
+    if (!cleanBase || cleanBase === "/") return `/${name}`;
+    return `${cleanBase}/${name}`;
   }
 
   function formatSize(bytes) {
@@ -53,10 +61,11 @@
 
     const providerId = adapter.providerId;
     const providerName = adapter.providerName || "网盘";
+    const rootDir = adapter.rootDir || "/";
     const getCurrentDir =
       typeof adapter.getCurrentDir === "function"
         ? adapter.getCurrentDir
-        : () => "/";
+        : () => ({ dir: rootDir, displayPath: "/" });
     const getSelectedItemsFromDom =
       typeof adapter.getSelectedItemsFromDom === "function"
         ? adapter.getSelectedItemsFromDom
@@ -64,6 +73,20 @@
     const fallbackDir = adapter.fallbackDir || null;
     const fallbackHint =
       adapter.fallbackHint || "读取失败。如果是应用沙盒限制，可尝试点击下方进入专属目录：";
+    const emptyErrorHint =
+      adapter.emptyErrorHint || "读取目录失败，请确认授权或登录状态后重试。";
+
+    function normalizeDirTarget(raw) {
+      if (raw && typeof raw === "object") {
+        const dir = raw.dir || rootDir;
+        const displayPath =
+          raw.displayPath || (dir === rootDir ? "/" : String(dir));
+        return { dir, displayPath };
+      }
+      const dir = raw || rootDir;
+      const displayPath = dir === rootDir ? "/" : String(dir);
+      return { dir, displayPath };
+    }
 
     const root = document.createElement("div");
     root.id = "pandirect-root";
@@ -126,7 +149,10 @@
     const dlSelectedBtn = root.querySelector("#pd-dl-selected");
 
     let cachedFiles = [];
-    let activeDir = "/";
+    let activeDir = rootDir;
+    let activeDisplayPath = "/";
+    let activeParentDir = null;
+    let navStack = [];
 
     function getSelectedMode() {
       const checked = root.querySelector('input[name="pd-mode"]:checked');
@@ -156,13 +182,14 @@
       }
     }
 
-    async function openFolderDownloader(folderPath) {
+    async function openFolderDownloader(folderPath, folderLabel) {
       const mode = getSelectedMode();
       try {
         const res = await sendMessage({
           type: "PANDIRECT_OPEN_FOLDER_DOWNLOADER",
           provider: providerId,
           path: folderPath,
+          label: folderLabel || undefined,
           mode,
         });
         if (!res?.ok) {
@@ -260,17 +287,29 @@
         btnWrap.className = "pd-row-btns";
 
         if (file.isdir) {
+          const childDisplayPath =
+            file.displayPath || joinDisplayPath(activeDisplayPath, file.name);
+
           const openBtn = document.createElement("button");
           openBtn.className = "pd-btn-ghost pd-btn-sm";
           openBtn.textContent = "进入";
-          openBtn.addEventListener("click", () => loadDirectory(file.path));
+          openBtn.addEventListener("click", () => {
+            navStack.push({
+              dir: activeDir,
+              displayPath: activeDisplayPath,
+            });
+            loadDirectory({
+              dir: file.path,
+              displayPath: childDisplayPath,
+            });
+          });
 
           const dlFolderBtn = document.createElement("button");
           dlFolderBtn.className = "pd-btn-primary pd-btn-sm";
           dlFolderBtn.textContent = "下整夹";
           dlFolderBtn.title = "打开整文件夹流式下载器（保留完整子目录结构）";
           dlFolderBtn.addEventListener("click", () =>
-            openFolderDownloader(file.path)
+            openFolderDownloader(file.path, childDisplayPath)
           );
 
           btnWrap.appendChild(openBtn);
@@ -288,12 +327,22 @@
       });
     }
 
-    async function loadDirectory(targetDir) {
-      activeDir = targetDir || getCurrentDir();
-      pathEl.textContent = activeDir;
-      upBtn.classList.toggle("pd-hidden", activeDir === "/");
+    async function loadDirectory(rawTarget, { resetHistory = false } = {}) {
+      if (resetHistory) {
+        navStack = [];
+      }
+
+      const target = normalizeDirTarget(rawTarget || getCurrentDir());
+      activeDir = target.dir;
+      activeDisplayPath = target.displayPath;
+      activeParentDir = null;
+
+      pathEl.textContent = activeDisplayPath;
+      pathEl.title = activeDisplayPath;
+      const initiallyRoot = activeDir === rootDir || activeDir === "/";
+      upBtn.classList.toggle("pd-hidden", initiallyRoot && navStack.length === 0);
       hideNotice();
-      listEl.innerHTML = `<div class="pd-empty">正在读取目录 ${activeDir} ...</div>`;
+      listEl.innerHTML = `<div class="pd-empty">正在读取目录 ${activeDisplayPath} ...</div>`;
 
       try {
         const res = await sendMessage({
@@ -316,13 +365,35 @@
             `;
             const tryBtn = listEl.querySelector("#pd-try-fallback");
             if (tryBtn) {
-              tryBtn.addEventListener("click", () => loadDirectory(fallbackDir));
+              tryBtn.addEventListener("click", () =>
+                loadDirectory(fallbackDir, { resetHistory: true })
+              );
             }
           } else {
-            listEl.innerHTML = `<div class="pd-empty">读取目录失败，请确认授权状态后重试。</div>`;
+            listEl.innerHTML = `<div class="pd-empty">${emptyErrorHint}</div>`;
           }
           return;
         }
+
+        if (res.dir) {
+          activeDir = res.dir;
+        }
+        if (
+          res.displayPath &&
+          (activeDisplayPath === activeDir || activeDisplayPath === "/")
+        ) {
+          activeDisplayPath = res.displayPath;
+        }
+        activeParentDir = res.parentDir ?? null;
+
+        const isRoot =
+          typeof res.isRoot === "boolean"
+            ? res.isRoot
+            : activeDir === rootDir || activeDir === "/";
+
+        pathEl.textContent = activeDisplayPath;
+        pathEl.title = activeDisplayPath;
+        upBtn.classList.toggle("pd-hidden", isRoot && navStack.length === 0);
 
         cachedFiles = res.files || [];
         renderFileList(cachedFiles);
@@ -336,7 +407,7 @@
       drawer.classList.toggle("pd-hidden", !isHidden);
       if (isHidden) {
         await syncDefaultMode();
-        await loadDirectory(getCurrentDir());
+        await loadDirectory(getCurrentDir(), { resetHistory: true });
       }
     });
 
@@ -345,16 +416,43 @@
     });
 
     upBtn.addEventListener("click", () => {
-      loadDirectory(getParentDir(activeDir));
+      if (navStack.length > 0) {
+        const prev = navStack.pop();
+        loadDirectory(prev);
+        return;
+      }
+      if (activeParentDir !== null && activeParentDir !== undefined) {
+        const parentDisplay =
+          activeParentDir === rootDir || activeParentDir === "/"
+            ? "/"
+            : getParentPath(activeDisplayPath);
+        loadDirectory({ dir: activeParentDir, displayPath: parentDisplay });
+        return;
+      }
+      if (typeof activeDir === "string" && activeDir.startsWith("/")) {
+        loadDirectory(getParentPath(activeDir));
+        return;
+      }
+      loadDirectory({ dir: rootDir, displayPath: "/" }, { resetHistory: true });
     });
 
     refreshBtn.addEventListener("click", () => {
-      loadDirectory(getCurrentDir());
+      loadDirectory(getCurrentDir(), { resetHistory: true });
     });
 
     dlDirBtn.addEventListener("click", () => {
-      openFolderDownloader(activeDir);
+      openFolderDownloader(activeDir, activeDisplayPath);
     });
+
+    if (adapter.aria2Notice) {
+      root.querySelectorAll('input[name="pd-mode"]').forEach((radio) => {
+        radio.addEventListener("change", () => {
+          if (radio.value === "aria2" && radio.checked) {
+            showNotice(adapter.aria2Notice, "info");
+          }
+        });
+      });
+    }
 
     dlSelectedBtn.addEventListener("click", async () => {
       const domSel = getSelectedItemsFromDom();
@@ -370,7 +468,10 @@
       const selectedFiles = matchedItems.filter((f) => !f.isdir);
 
       if (selectedFolders.length === 1 && selectedFiles.length === 0) {
-        await openFolderDownloader(selectedFolders[0].path);
+        const folder = selectedFolders[0];
+        const folderLabel =
+          folder.displayPath || joinDisplayPath(activeDisplayPath, folder.name);
+        await openFolderDownloader(folder.path, folderLabel);
         return;
       }
 

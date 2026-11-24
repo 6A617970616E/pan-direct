@@ -118,10 +118,11 @@ export function createBackgroundRuntime(providers) {
       case "PANDIRECT_PROVIDER_AUTH_START": {
         const provider = registry.get(message.provider);
         const ctx = createProviderContext(provider.id);
-        await provider.startAuth(message, ctx);
+        const authResult = await provider.startAuth(message, ctx);
         await dnr.syncAllDnrRules();
         return {
           ok: true,
+          authResult,
           ...(await buildPublicStatus()),
         };
       }
@@ -142,24 +143,40 @@ export function createBackgroundRuntime(providers) {
         const provider = registry.get(message.provider);
         const ctx = createProviderContext(provider.id);
         const result = await provider.listFiles(message.dir, ctx);
-        return { ok: true, provider: provider.id, ...result };
+        return {
+          ok: true,
+          provider: provider.id,
+          providerName: provider.name,
+          ...result,
+        };
       }
 
       case "PANDIRECT_LIST_FOLDER_RECURSIVE": {
         const provider = registry.get(message.provider);
         const ctx = createProviderContext(provider.id);
         const result = await provider.listFolderRecursive(message.path, ctx);
-        return { ok: true, provider: provider.id, ...result };
+        return {
+          ok: true,
+          provider: provider.id,
+          providerName: provider.name,
+          ...result,
+        };
       }
 
       case "PANDIRECT_OPEN_FOLDER_DOWNLOADER": {
         const provider = registry.get(message.provider);
         const folderPath = message.path || "/";
         const mode = message.mode === "aria2" ? "aria2" : "browser";
+        const query = new URLSearchParams({
+          provider: provider.id,
+          path: folderPath,
+          mode,
+        });
+        if (message.label && typeof message.label === "string") {
+          query.set("label", message.label);
+        }
         const targetUrl = chrome.runtime.getURL(
-          `downloader/downloader.html?provider=${encodeURIComponent(
-            provider.id
-          )}&path=${encodeURIComponent(folderPath)}&mode=${mode}`
+          `downloader/downloader.html?${query.toString()}`
         );
         await chrome.tabs.create({ url: targetUrl });
         return { ok: true };

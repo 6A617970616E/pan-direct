@@ -1,3 +1,5 @@
+import { popupCardRenderers } from "../providers/popup-index.js";
+
 const enabledToggle = document.getElementById("enabledToggle");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
@@ -25,6 +27,11 @@ const uaFeedback = document.getElementById("uaFeedback");
 const versionText = document.getElementById("versionText");
 const editionTag = document.getElementById("editionTag");
 const providersHint = document.getElementById("providersHint");
+const extraProviderCards = document.getElementById("extraProviderCards");
+
+function sendMessage(msg) {
+  return chrome.runtime.sendMessage(msg);
+}
 
 function setFeedback(el, text, type) {
   el.textContent = text;
@@ -58,6 +65,20 @@ function renderStatus(res) {
       .map((p) => (p.tier === "community" ? `${p.name}（社区）` : p.name))
       .join("、");
     providersHint.textContent = `已启用网盘：${names} · 自动注入合规下载请求头。`;
+  }
+
+  if (extraProviderCards && Array.isArray(res.providers)) {
+    for (const provider of res.providers) {
+      const renderCard = popupCardRenderers?.[provider.id];
+      if (typeof renderCard === "function") {
+        renderCard({
+          container: extraProviderCards,
+          provider,
+          sendMessage,
+          onStatusUpdate: renderStatus,
+        });
+      }
+    }
   }
 
   if (res.enabled) {

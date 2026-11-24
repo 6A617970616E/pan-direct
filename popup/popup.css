@@ -33,6 +33,16 @@ body {
   gap: 10px;
 }
 
+.extra-provider-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.extra-provider-cards:empty {
+  display: none;
+}
+
 .header {
   display: flex;
   align-items: center;
