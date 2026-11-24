@@ -38,6 +38,22 @@
 
 ---
 
+## 架构与双产物打包（Store / Community）
+
+本项目采用 `core/` + `providers/official/` + `providers/community/` 分层架构，零第三方 npm 依赖：
+
+- **直接开发加载**：仓库根目录自带已同步的 `manifest.json`，可直接加载解压测试。
+- **双产物构建**（Node.js >= 18）：
+  ```bash
+  npm run build            # 同时产出 dist/store.zip 与 dist/community.zip
+  npm run build:store      # 仅打包商店正式版（严格排除 providers/community/ 与对应权限）
+  npm run build:community  # 打包社区版（包含官方 + 社区实验性适配器）
+  npm run sync-root        # 根据 provider.json 同步根目录 manifest.json 与 providers/index.js
+  npm test                 # 运行单元测试与双产物隔离校验
+  ```
+
+---
+
 ## 说明与合规声明
 
 * 本项目仅调用百度网盘开放平台公开文档接口（OAuth 2.0、`xpan/file`、`xpan/multimedia`），**不包含任何解除非会员限速、破解会员或账号池共享功能**，下载速度由用户自身百度账号权限决定。

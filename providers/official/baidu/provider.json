@@ -1,0 +1,30 @@
+{
+  "id": "baidu",
+  "name": "百度网盘",
+  "tier": "official",
+  "enabled": true,
+  "description": "基于百度网盘开放平台官方 OAuth（oob 国内直连）与 xpan OpenAPI",
+  "entry": "provider.js",
+  "exportName": "baiduProvider",
+  "manifest": {
+    "host_permissions": [
+      "*://*.baidu.com/*",
+      "*://*.baidupcs.com/*"
+    ],
+    "content_scripts": [
+      {
+        "matches": [
+          "https://pan.baidu.com/*"
+        ],
+        "js": [
+          "core/ui/content-drawer.js",
+          "providers/official/baidu/content.js"
+        ],
+        "css": [
+          "core/ui/content-drawer.css"
+        ],
+        "run_at": "document_idle"
+      }
+    ]
+  }
+}

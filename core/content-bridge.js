@@ -9,7 +9,7 @@
  * Protocol (window.postMessage):
  *   Page -> Extension:
  *     { source: "pandirect-page", requestId: "...", action: "PING" }
- *     { source: "pandirect-page", requestId: "...", action: "DOWNLOAD", payload: { url, filename? } }
+ *     { source: "pandirect-page", requestId: "...", action: "DOWNLOAD", payload: { url, filename?, provider? } }
  *
  *   Extension -> Page:
  *     { source: "pandirect-ext", requestId: "...", ok: true|false, data?: ..., error?: ... }
@@ -53,13 +53,14 @@ window.addEventListener("message", (event) => {
   if (msg.action === "DOWNLOAD") {
     const url = msg.payload?.url;
     const filename = msg.payload?.filename;
+    const provider = msg.payload?.provider;
     if (!url || typeof url !== "string") {
       reply({ ok: false, error: "缺少有效的下载链接 url" });
       return;
     }
 
     chrome.runtime.sendMessage(
-      { type: "PANDIRECT_DOWNLOAD", url, filename },
+      { type: "PANDIRECT_DOWNLOAD", url, filename, provider },
       (res) => {
         if (chrome.runtime.lastError) {
           reply({ ok: false, error: chrome.runtime.lastError.message });

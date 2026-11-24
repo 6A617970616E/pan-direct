@@ -12,11 +12,14 @@
         <div class="brand">
           <div class="logo">PD</div>
           <div>
-            <h1>PanDirect</h1>
+            <div class="title-row">
+              <h1>PanDirect</h1>
+              <span class="edition-tag" id="editionTag">Dev</span>
+            </div>
             <p class="subtitle">网盘直下助手</p>
           </div>
         </div>
-        <label class="switch" title="开启或暂停 UA 请求头注入">
+        <label class="switch" title="开启或暂停下载请求头规则">
           <input type="checkbox" id="enabledToggle" />
           <span class="slider"></span>
         </label>
@@ -28,8 +31,8 @@
           <span class="status-text" id="statusText">正在读取状态...</span>
           <span class="badge" id="ruleBadge">0 规则</span>
         </div>
-        <p class="hint">
-          自动为 <code>*.pcs.baidu.com</code> 与 <code>*.baidupcs.com</code> 注入合规 UA，支持单文件与整文件夹下载。
+        <p class="hint" id="providersHint">
+          自动为网盘直链注入合规请求头，支持单文件与整文件夹流式下载。
         </p>
       </section>
 
@@ -111,8 +114,8 @@
       </details>
 
       <footer class="footer">
-        <span id="versionText">v0.3.0</span>
-        <span>打开 pan.baidu.com 点右下角「PanDirect 直下」</span>
+        <span id="versionText">v0.4.0</span>
+        <span>打开网盘页面点右下角「PanDirect 直下」</span>
       </footer>
     </div>
 

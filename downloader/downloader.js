@@ -1,8 +1,10 @@
 const params = new URLSearchParams(window.location.search);
+const targetProviderId = params.get("provider") || "baidu";
 const targetFolderPath = params.get("path") || "/";
 const preferredMode = params.get("mode") || "browser";
 
 const folderPathText = document.getElementById("folderPathText");
+const providerPill = document.getElementById("providerPill");
 const fileCountPill = document.getElementById("fileCountPill");
 const totalSizePill = document.getElementById("totalSizePill");
 const rescanBtn = document.getElementById("rescanBtn");
@@ -18,7 +20,16 @@ const overallSpeedText = document.getElementById("overallSpeedText");
 const overallBar = document.getElementById("overallBar");
 const fileListEl = document.getElementById("fileList");
 
+const PROVIDER_LABELS = {
+  baidu: "百度网盘",
+  pan123: "123云盘",
+  quark: "夸克网盘",
+};
+
 folderPathText.textContent = targetFolderPath;
+if (providerPill) {
+  providerPill.textContent = PROVIDER_LABELS[targetProviderId] || targetProviderId;
+}
 
 let tasks = [];
 let totalBytes = 0;
@@ -197,18 +208,20 @@ async function scanFolder() {
   try {
     const res = await sendMessage({
       type: "PANDIRECT_LIST_FOLDER_RECURSIVE",
+      provider: targetProviderId,
       path: targetFolderPath,
     });
 
     if (!res?.ok) {
       showBanner(res?.error || "扫描目录失败", "err");
       fileCountPill.textContent = "扫描失败";
-      fileListEl.innerHTML = `<div class="empty">扫描失败，请确认已完成百度授权且有目录权限。</div>`;
+      fileListEl.innerHTML = `<div class="empty">扫描失败，请确认已完成网盘授权且有目录权限。</div>`;
       return;
     }
 
     tasks = (res.files || []).map((f) => ({
       ...f,
+      id: f.id || f.fsId,
       state: "pending",
       statusText: "等待开始",
       loaded: 0,
@@ -220,7 +233,11 @@ async function scanFolder() {
     totalSizePill.textContent = formatBytes(totalBytes);
 
     if (res.truncated) {
-      showBanner("目录内文件数量超过 20,000 上限，当前仅展示前 20,000 个文件。", "info");
+      const limitLabel = Number(res.maxFiles || 10000).toLocaleString("en-US");
+      showBanner(
+        `目录内文件数量超过 ${limitLabel} 上限，当前仅展示前 ${limitLabel} 个文件。`,
+        "info"
+      );
     } else if (preferredMode === "aria2") {
       showBanner("扫描完成！点击「全部推送到 Aria2」即可保留目录结构批量推送。", "info");
     }
@@ -279,7 +296,9 @@ async function downloadSingleFileToDisk(task, rootDirHandle) {
 
   const meta = await sendMessage({
     type: "PANDIRECT_GET_FILE_STREAM_URL",
-    fsId: task.fsId,
+    provider: targetProviderId,
+    itemId: task.id || task.fsId,
+    fsId: task.fsId || task.id,
   });
 
   if (!meta?.ok || !meta.url) {
@@ -382,8 +401,10 @@ async function pushSingleFileToAria2(task) {
   updateRowUi(task);
 
   const res = await sendMessage({
-    type: "PANDIRECT_PUSH_FSID_TO_ARIA2",
-    fsId: task.fsId,
+    type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+    provider: targetProviderId,
+    itemId: task.id || task.fsId,
+    fsId: task.fsId || task.id,
     relativePath: task.relativePath,
   });
 

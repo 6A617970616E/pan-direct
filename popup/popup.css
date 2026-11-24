@@ -58,10 +58,36 @@ body {
   justify-content: center;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 h1 {
   font-size: 15px;
   font-weight: 700;
   line-height: 1.2;
+}
+
+.edition-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.edition-tag.store {
+  background: #eff6ff;
+  color: var(--primary);
+}
+
+.edition-tag.community {
+  background: #f5f3ff;
+  color: #7c3aed;
 }
 
 .subtitle {

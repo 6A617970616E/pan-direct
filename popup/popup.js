@@ -23,6 +23,8 @@ const uaInput = document.getElementById("uaInput");
 const saveUaBtn = document.getElementById("saveUaBtn");
 const uaFeedback = document.getElementById("uaFeedback");
 const versionText = document.getElementById("versionText");
+const editionTag = document.getElementById("editionTag");
+const providersHint = document.getElementById("providersHint");
 
 function setFeedback(el, text, type) {
   el.textContent = text;
@@ -46,9 +48,21 @@ function renderStatus(res) {
     versionText.textContent = `v${res.version}`;
   }
 
+  if (editionTag && res.edition) {
+    editionTag.textContent = res.editionLabel || res.edition;
+    editionTag.className = `edition-tag ${res.edition}`;
+  }
+
+  if (providersHint && Array.isArray(res.providers) && res.providers.length > 0) {
+    const names = res.providers
+      .map((p) => (p.tier === "community" ? `${p.name}（社区）` : p.name))
+      .join("、");
+    providersHint.textContent = `已启用网盘：${names} · 自动注入合规下载请求头。`;
+  }
+
   if (res.enabled) {
     statusDot.classList.add("active");
-    statusText.textContent = "已启用 · 自动注入下载 UA";
+    statusText.textContent = "已启用 · 自动注入下载规则";
   } else {
     statusDot.classList.remove("active");
     statusText.textContent = "已暂停 · 未拦截下载请求";
@@ -127,6 +141,7 @@ oauthBtn.addEventListener("click", async () => {
   try {
     const res = await chrome.runtime.sendMessage({
       type: "PANDIRECT_OAUTH_LOGIN",
+      provider: "baidu",
       appKey,
     });
     if (res?.ok) {
@@ -147,7 +162,10 @@ oauthBtn.addEventListener("click", async () => {
 });
 
 logoutBtn.addEventListener("click", async () => {
-  const res = await chrome.runtime.sendMessage({ type: "PANDIRECT_OAUTH_LOGOUT" });
+  const res = await chrome.runtime.sendMessage({
+    type: "PANDIRECT_OAUTH_LOGOUT",
+    provider: "baidu",
+  });
   if (res?.ok) {
     renderStatus(res);
     setFeedback(oauthFeedback, "已清除本地授权 Token", "ok");
@@ -213,7 +231,8 @@ saveUaBtn.addEventListener("click", async () => {
   }
   const res = await chrome.runtime.sendMessage({
     type: "PANDIRECT_SET_CONFIG",
-    userAgent: ua,
+    provider: "baidu",
+    providerConfig: { userAgent: ua },
   });
   if (res?.ok) {
     renderStatus(res);
