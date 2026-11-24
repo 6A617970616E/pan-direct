@@ -33,26 +33,13 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
         <button type="button" class="btn-link danger" data-role="clearBtn">清除缓存</button>
       </div>
 
-      <div class="row-between" data-role="manualCookieRow" style="display: none; margin-top: 6px;">
-        <span class="muted-sm">当前正在使用手动覆盖的 Aria2 Cookie</span>
-        <button type="button" class="btn-link" data-role="resetCookieBtn">恢复自动复用</button>
-      </div>
-
       <details class="sub-details">
-        <summary class="clickable sub-summary">夸克高级设置（客户端 UA / 手动覆盖 Aria2 Cookie）</summary>
+        <summary class="clickable sub-summary">夸克高级设置（客户端 UA）</summary>
         <div class="sub-body">
-          <label class="label">夸克客户端 User-Agent（用于绕过网页端 code=23018 限制）</label>
+          <label class="label">夸克客户端 User-Agent（平时无需修改，仅作客户端版本更新应急）</label>
           <div class="row">
             <input type="text" data-role="uaInput" placeholder="quark-cloud-drive/2.5.56 ..." />
             <button type="button" class="btn-secondary" data-role="saveUaBtn">保存</button>
-          </div>
-
-          <label class="label" style="margin-top: 8px;">
-            手动覆盖 Aria2 Cookie（通常留空即可，默认自动复用本机浏览器会话）
-          </label>
-          <div class="row">
-            <input type="password" data-role="cookieInput" placeholder="留空：自动读取当前夸克会话（仅发往本机 Aria2）" />
-            <button type="button" class="btn-secondary" data-role="saveCookieBtn">保存</button>
           </div>
         </div>
       </details>
@@ -65,11 +52,8 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
     const checkBtn = card.querySelector('[data-role="checkBtn"]');
     const openBtn = card.querySelector('[data-role="openBtn"]');
     const clearBtn = card.querySelector('[data-role="clearBtn"]');
-    const resetCookieBtn = card.querySelector('[data-role="resetCookieBtn"]');
     const uaInput = card.querySelector('[data-role="uaInput"]');
     const saveUaBtn = card.querySelector('[data-role="saveUaBtn"]');
-    const cookieInput = card.querySelector('[data-role="cookieInput"]');
-    const saveCookieBtn = card.querySelector('[data-role="saveCookieBtn"]');
     const feedback = card.querySelector('[data-role="feedback"]');
 
     const setFeedback = (text, type = "") => {
@@ -120,23 +104,7 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
       });
       if (res?.ok) {
         onStatusUpdate(res);
-        cookieInput.value = "";
-        setFeedback("已清除夸克本地缓存与 Aria2 Cookie 配置", "ok");
-      }
-    });
-
-    resetCookieBtn.addEventListener("click", async () => {
-      const res = await sendMessage({
-        type: "PANDIRECT_SET_CONFIG",
-        provider: "quark",
-        providerConfig: { aria2Cookie: "" },
-      });
-      if (res?.ok) {
-        onStatusUpdate(res);
-        cookieInput.value = "";
-        setFeedback("已清除手动 Cookie，恢复自动复用浏览器夸克会话", "ok");
-      } else {
-        setFeedback(res?.error || "清除失败", "err");
+        setFeedback("已清除夸克本地状态缓存", "ok");
       }
     });
 
@@ -158,42 +126,14 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
         setFeedback(res?.error || "保存失败", "err");
       }
     });
-
-    saveCookieBtn.addEventListener("click", async () => {
-      const cookieVal = cookieInput.value.trim().replace(/^cookie\s*:\s*/i, "").trim();
-      if (cookieVal && !/(?:^|;\s*)__puus=[^;]+/.test(cookieVal)) {
-        setFeedback(
-          "手动 Cookie 格式无效：必须包含 __puus=xxx（本机 Aria2 建议留空保存以自动复用）",
-          "err"
-        );
-        return;
-      }
-      const res = await sendMessage({
-        type: "PANDIRECT_SET_CONFIG",
-        provider: "quark",
-        providerConfig: { aria2Cookie: cookieVal },
-      });
-      if (res?.ok) {
-        onStatusUpdate(res);
-        cookieInput.value = "";
-        setFeedback(
-          cookieVal ? "本地 Aria2 专用 Cookie 已保存" : "已清空手动 Cookie，恢复自动复用浏览器会话",
-          "ok"
-        );
-      } else {
-        setFeedback(res?.error || "保存失败", "err");
-      }
-    });
   }
 
   // Update dynamic state from status response
   const st = provider.status || {};
   const pill = card.querySelector('[data-role="pill"]');
   const actionsRow = card.querySelector('[data-role="actionsRow"]');
-  const manualCookieRow = card.querySelector('[data-role="manualCookieRow"]');
   const accountText = card.querySelector('[data-role="accountText"]');
   const uaInput = card.querySelector('[data-role="uaInput"]');
-  const cookieInput = card.querySelector('[data-role="cookieInput"]');
 
   if (st.loggedIn) {
     pill.textContent = "已登录";
@@ -205,24 +145,16 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
   } else if (st.checkedAt) {
     pill.textContent = "未登录";
     pill.className = "pill warn";
-    actionsRow.style.display = st.hasAria2Cookie ? "flex" : "none";
+    actionsRow.style.display = "none";
     accountText.textContent = "请先登录 pan.quark.cn";
   } else {
     pill.textContent = "免配会话";
     pill.className = "pill";
-    actionsRow.style.display = st.hasAria2Cookie ? "flex" : "none";
-    accountText.textContent = st.hasAria2Cookie ? "已设置本地 Aria2 Cookie" : "";
-  }
-
-  if (manualCookieRow) {
-    manualCookieRow.style.display = st.hasAria2Cookie ? "flex" : "none";
+    actionsRow.style.display = "none";
+    accountText.textContent = "";
   }
 
   if (st.userAgent && !uaInput.value) {
     uaInput.value = st.userAgent;
   }
-
-  cookieInput.placeholder = st.hasAria2Cookie
-    ? "已设置手动覆盖 Cookie（留空点保存恢复自动复用）"
-    : "留空：自动读取当前夸克会话（仅发往本机 Aria2）";
 }

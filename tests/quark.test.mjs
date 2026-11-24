@@ -15,7 +15,6 @@ import {
   isTrustedLocalAria2Url,
   normalizeQuarkDirId,
   quarkProvider,
-  sanitizeCookieInput,
   selectQuarkCookiesForUrl,
 } from "../providers/community/quark/provider.js";
 import { buildEdition } from "../scripts/build.mjs";
@@ -554,17 +553,12 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
       /安全保护/
     );
 
-    // 5. Manual aria2Cookie override strips accidental "Cookie:" prefix and newlines
-    assert.equal(
-      sanitizeCookieInput("Cookie: __puus=abc\n; __uid=1 "),
-      "__puus=abc ; __uid=1"
-    );
+    // 5. Local Aria2 URL trust check & cookie selector (drops expired cookies, avoids unrelated subdomain leakage)
     assert.equal(isTrustedLocalAria2Url("http://localhost:6800/jsonrpc"), true);
     assert.equal(isTrustedLocalAria2Url("http://127.0.0.1:16800/jsonrpc"), true);
     assert.equal(isTrustedLocalAria2Url("http://192.168.1.10:6800/jsonrpc"), true);
     assert.equal(isTrustedLocalAria2Url("https://evil.example/jsonrpc"), false);
 
-    // 5b. Cookie selector drops expired cookies, avoids unrelated subdomain leakage, and prefers newest/most-specific __puus
     const selectedHeader = selectQuarkCookiesForUrl({
       nowSec: 1000,
       targetCookies: [
@@ -580,40 +574,27 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     });
     assert.equal(selectedHeader, "__puus=api_freshest_puus; __pus=pus_val");
 
+    // 5b. Legacy aria2Cookie values in storage are ignored/stripped and never persisted
     globalThis.chrome = cookieChrome;
     await autoRuntime.handleMessage({
       type: "PANDIRECT_SET_CONFIG",
       aria2Url: "http://localhost:6800/jsonrpc",
       provider: "quark",
-      providerConfig: { aria2Cookie: "bare_raw_token_without_equals_sign_193bytes" },
+      providerConfig: { aria2Cookie: "legacy_stale_cookie_value" },
     });
-    const fallbackRes = await autoRuntime.handleMessage({
+    assert.equal(cookieState.localStore.providerConfigs?.quark?.aria2Cookie, undefined);
+    const liveAriaRes = await autoRuntime.handleMessage({
       type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
       provider: "quark",
       itemId: "fid_demo_1",
       relativePath: "Movies/movie.mkv",
     });
-    assert.equal(fallbackRes.ok, true);
+    assert.equal(liveAriaRes.ok, true);
     assert.deepEqual(capturedAria2Body.params[1].header, [
       "Cookie: __puus=live_session_puus; __uid=uid_123",
     ]);
 
     globalThis.chrome = mockChrome;
-    await runtime.handleMessage({
-      type: "PANDIRECT_SET_CONFIG",
-      provider: "quark",
-      providerConfig: { aria2Cookie: "Cookie: __puus=demo_cookie\n" },
-    });
-    const ariaRes = await runtime.handleMessage({
-      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
-      provider: "quark",
-      itemId: "fid_demo_1",
-      relativePath: "Movies/movie.mkv",
-    });
-    assert.equal(ariaRes.ok, true);
-    assert.deepEqual(capturedAria2Body.params[1].header, [
-      "Cookie: __puus=demo_cookie",
-    ]);
 
     // 6. code=23018 returns clear guidance
     simulate23018 = true;

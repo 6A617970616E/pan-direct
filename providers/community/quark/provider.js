@@ -12,7 +12,6 @@ const QUARK_WEB_URL = "https://pan.quark.cn/list#/list/all";
 
 const DEFAULT_QUARK_CONFIG = {
   userAgent: DEFAULT_QUARK_USER_AGENT,
-  aria2Cookie: "",
   loggedIn: false,
   nickname: "",
   checkedAt: 0,
@@ -261,15 +260,6 @@ async function checkQuarkSession() {
   return { loggedIn: false, nickname: "" };
 }
 
-export function sanitizeCookieInput(raw) {
-  if (!raw || typeof raw !== "string") return "";
-  return raw
-    .replace(/[\r\n]+/g, " ")
-    .trim()
-    .replace(/^cookie\s*:\s*/i, "")
-    .trim();
-}
-
 export function isTrustedLocalAria2Url(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
@@ -490,7 +480,6 @@ export const quarkProvider = defineProvider({
       userAgent:
         (raw.userAgent || DEFAULT_QUARK_USER_AGENT).trim() ||
         DEFAULT_QUARK_USER_AGENT,
-      aria2Cookie: sanitizeCookieInput(raw.aria2Cookie || ""),
       loggedIn: Boolean(raw.loggedIn),
       nickname: (raw.nickname || "").trim(),
       checkedAt: Number(raw.checkedAt) || 0,
@@ -503,7 +492,6 @@ export const quarkProvider = defineProvider({
       loggedIn: Boolean(config.loggedIn),
       nickname: config.nickname || "",
       checkedAt: Number(config.checkedAt) || 0,
-      hasAria2Cookie: Boolean(config.aria2Cookie),
     };
   },
 
@@ -514,52 +502,32 @@ export const quarkProvider = defineProvider({
   },
 
   async getAria2Headers(config, { url, coreConfig, target } = {}) {
-    const headers = [
+    const rpcUrl = coreConfig?.aria2Url || "http://localhost:6800/jsonrpc";
+    if (!isTrustedLocalAria2Url(rpcUrl)) {
+      throw new Error(
+        `安全保护：拒绝将浏览器夸克会话 Cookie 自动发送至非本机/局域网 Aria2 地址（${rpcUrl}），请改用本机或局域网 Aria2。`
+      );
+    }
+
+    const rotatedPuus = target?._rotatedPuus || "";
+    let cookieHeader = await readQuarkSessionCookieHeader(url, { rotatedPuus });
+
+    if (!cookieHeader || !/(?:^|;\s*)__puus=/.test(cookieHeader)) {
+      await flushQuarkPuusCookie();
+      cookieHeader = await readQuarkSessionCookieHeader(url, { rotatedPuus });
+    }
+
+    if (!cookieHeader || !/(?:^|;\s*)__puus=/.test(cookieHeader)) {
+      throw new Error(
+        "未读取到有效的夸克登录 Cookie（缺少 __puus），请确认已在当前浏览器登录 pan.quark.cn，并刷新扩展授权 cookies 权限后重试。"
+      );
+    }
+
+    return [
       `User-Agent: ${config.userAgent}`,
       `Referer: ${QUARK_REFERER}`,
+      `Cookie: ${cookieHeader}`,
     ];
-
-    const rpcUrl = coreConfig?.aria2Url || "http://localhost:6800/jsonrpc";
-    const isLocalRpc = isTrustedLocalAria2Url(rpcUrl);
-
-    let cookieHeader = sanitizeCookieInput(config.aria2Cookie || "");
-    const hasKeyValuePair = /(?:^|;\s*)[^;=\s]+=[^;]*/.test(cookieHeader);
-
-    if (cookieHeader && !hasKeyValuePair) {
-      if (isLocalRpc) {
-        // Ignore malformed legacy/bare-token manual override on local Aria2 and use live browser cookies
-        cookieHeader = "";
-      } else {
-        throw new Error(
-          "手动填写的夸克 Aria2 Cookie 格式无效（缺少 key=value，例如 __puus=xxx），请重新填写完整 Cookie。"
-        );
-      }
-    }
-
-    if (!cookieHeader) {
-      if (!isLocalRpc) {
-        throw new Error(
-          `安全保护：拒绝将浏览器夸克会话 Cookie 自动发送至非本机/局域网 Aria2 地址（${rpcUrl}）。如需使用远程 Aria2，请手动填写 Cookie 或改用本机 Aria2。`
-        );
-      }
-
-      const rotatedPuus = target?._rotatedPuus || "";
-      cookieHeader = await readQuarkSessionCookieHeader(url, { rotatedPuus });
-
-      if (!cookieHeader || !/(?:^|;\s*)__puus=/.test(cookieHeader)) {
-        await flushQuarkPuusCookie();
-        cookieHeader = await readQuarkSessionCookieHeader(url, { rotatedPuus });
-      }
-
-      if (!cookieHeader || !/(?:^|;\s*)__puus=/.test(cookieHeader)) {
-        throw new Error(
-          "未读取到有效的夸克登录 Cookie（缺少 __puus），请确认已在当前浏览器登录 pan.quark.cn，并刷新扩展授权 cookies 权限后重试。"
-        );
-      }
-    }
-
-    headers.push(`Cookie: ${cookieHeader}`);
-    return headers;
   },
 
   getDnrRules(config, { ruleIdBase, resourceTypes }) {
@@ -690,7 +658,6 @@ export const quarkProvider = defineProvider({
       loggedIn: false,
       nickname: "",
       checkedAt: 0,
-      aria2Cookie: "",
     });
   },
 

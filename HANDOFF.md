@@ -87,10 +87,13 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
 5. **MV3 Service Worker 禁用动态 `import()`**
    - `providers/index.js` 与 `providers/popup-index.js` 必须使用静态 ES `import` 导出当前版本启用的适配器，由 `scripts/build.mjs` 在构建 `store` / `community` 产物时按 `provider.json` 自动生成。
 
-6. **夸克网盘社区版关键要点（仅 `community.zip`）**
+6. **夸克网盘社区版关键要点（仅 `community.zip`，真机已验证单文件直下与本机 Aria2 推送）**
    - 夸克 `POST /1/clouddrive/file/download` 用普通浏览器 UA 会触发 `code=23018`（强制要求桌面客户端），必须由 DNR 为扩展发起的该接口请求与 `||pds.quark.cn/`、`.drive.quark.cn/` 下载节点注入 `quark-cloud-drive/...` 客户端 UA 及 `Referer: https://pan.quark.cn/`。
    - 夸克下载节点（`*.pds.quark.cn` / `*.drive.quark.cn`）依赖 OSS callback 校验浏览器会话 Cookie，因此 1 字节预检与 `downloader.html` 流式 `fetch` 均需按 Provider 声明透传 `credentials: "include"`，且下载节点 DNR 规则**不可**排除 `pan.quark.cn`（以保障页面隐藏 `<iframe>` 命中）。
-   - **权限隔离**：仅 `providers/community/quark/provider.json` 声明 `cookies` 权限，在推送夸克直链至本机/局域网 Aria2 时按需实时读取 `.quark.cn` 会话 Cookie（不落盘、不输出日志、拒绝发送至非本机/局域网地址）；`dist/store.zip` 构建时严格断言绝不含 `cookies` 权限或任何夸克代码。
+   - **Aria2 推送与防 412 要点**：
+     - `core/aria2.js` 将 `User-Agent` / `Referer` 映射为 Aria2 原生 `user-agent` / `referer` 顶层选项，仅将 `Cookie` 放入 `header` 数组；
+     - 在 `resolveDownloadTargets` 请求 `file/download` 期间通过 `chrome.cookies.onChanged` 临时捕获服务端刚轮换的 `__puus`，并严格按下载 URL 作用域选取 Cookie（不混入其它无关 `*.quark.cn` 子域 Cookie），缺失 `__puus` 时自动调用一次 `GET /1/clouddrive/auth/pc/flush` 补发。
+   - **权限隔离与零 Cookie 落盘**：仅 `providers/community/quark/provider.json` 声明 `cookies` 权限，仅在推送本机/局域网 Aria2 时内存实时透传（不持久化到 `chrome.storage`、不输出日志、拒绝发送至非本机/局域网地址）；`dist/store.zip` 构建时严格断言绝不含 `cookies` 权限或任何夸克代码。
 
 7. **安全与合规边界**
    - 仓库内**绝不硬编码**任何个人 `AppKey` / `SecretKey` / `access_token`。
@@ -109,8 +112,8 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
      - **123云盘**（官方开发者平台 `https://www.123pan.cn/developer`，文档 `https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced`）。
    - 优先同时上架 **Edge Add-ons（免费、中国大陆直连）** 与 **Chrome Web Store（$5）**。
 2. **社区版（Community Edition → GitHub Releases）**
-   - 在 `providers/community/` 中支持依赖浏览器网页会话的实验性网盘（已实现夸克网盘 `providers/community/quark/`，待 Chrome/Edge 真机联调验证），通过 `npm run build` 分离输出 `dist/store.zip` 与 `dist/community.zip`，`store.zip` 零社区代码与权限残留。
+   - 在 `providers/community/` 中支持依赖浏览器网页会话的实验性网盘（夸克网盘 `providers/community/quark/` 已真机跑通浏览器直下与本机 Aria2 推送），通过 `npm run build` 分离输出 `dist/store.zip` 与 `dist/community.zip`，`store.zip` 零社区代码与权限残留。
 3. **待打磨体验项**
    - ✅ 已完成：重构 `core/` + `providers/official/` + `providers/community/` 双构建打包脚本与自动化测试；
-   - 🚧 进行中（分支 `feat/quark-provider`）：夸克网盘社区适配器（单测与隔离校验通过，待真机实测验证）；
-   - ⬜ 待做：接入 123云盘官方 Provider、补充「复制直链 / 复制 curl 命令」、弹窗显示百度账号昵称（`xpan/nas?method=uinfo`）、隐私政策文档（商店提审必需）。
+   - ✅ 已完成（分支 `feat/quark-provider`）：夸克网盘社区适配器（单文件浏览器直下、本机 Aria2 零配置自动复用会话已真机验证通过）；
+   - ⬜ 待做：合并 `feat/quark-provider` 至 `main`、接入 123云盘官方 Provider、补充「复制直链 / 复制 curl 命令」、弹窗显示百度账号昵称（`xpan/nas?method=uinfo`）、隐私政策文档（商店提审必需）。
