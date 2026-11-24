@@ -370,6 +370,20 @@ export const quarkProvider = defineProvider({
           resourceTypes,
         },
       },
+      // Priority 1: also cover *.drive.quark.cn regional download nodes (e.g. dl-pc-sz.drive.quark.cn)
+      {
+        id: ruleIdBase + 5,
+        priority: 1,
+        action: {
+          type: "modifyHeaders",
+          requestHeaders: buildQuarkDownloadRequestHeaders(config.userAgent),
+        },
+        condition: {
+          urlFilter: ".drive.quark.cn/",
+          requestDomains: ["drive.quark.cn"],
+          resourceTypes,
+        },
+      },
       // Priority 1: supply Referer when checking account/info from extension SW
       {
         id: ruleIdBase + 4,

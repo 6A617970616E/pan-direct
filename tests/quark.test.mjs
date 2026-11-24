@@ -139,7 +139,7 @@ test("Quark DNR rules inject client UA for file/download and CDN without blockin
     }
   );
 
-  assert.equal(rules.length, 4);
+  assert.equal(rules.length, 5);
 
   const apiDownloadRule = rules.find(
     (r) => r.condition.urlFilter === "||drive-pc.quark.cn/1/clouddrive/file/download"
@@ -155,15 +155,23 @@ test("Quark DNR rules inject client UA for file/download and CDN without blockin
   );
   assert.ok(uaHeader.value.includes("quark-cloud-drive/"));
 
-  const cdnRule = rules.find((r) => r.condition.urlFilter === "||pds.quark.cn/");
-  assert.ok(cdnRule);
-  assert.equal(cdnRule.condition.excludedInitiatorDomains, undefined);
-  assert.ok(cdnRule.condition.resourceTypes.includes("sub_frame"));
+  const pdsCdnRule = rules.find((r) => r.condition.urlFilter === "||pds.quark.cn/");
+  assert.ok(pdsCdnRule);
+  assert.equal(pdsCdnRule.condition.excludedInitiatorDomains, undefined);
+  assert.ok(pdsCdnRule.condition.resourceTypes.includes("sub_frame"));
   assert.ok(
-    cdnRule.action.requestHeaders.some(
+    pdsCdnRule.action.requestHeaders.some(
       (h) => h.header === "referer" && h.value === "https://pan.quark.cn/"
     )
   );
+
+  const driveCdnRule = rules.find(
+    (r) => r.condition.urlFilter === ".drive.quark.cn/"
+  );
+  assert.ok(driveCdnRule);
+  assert.deepEqual(driveCdnRule.condition.requestDomains, ["drive.quark.cn"]);
+  assert.equal(driveCdnRule.condition.excludedInitiatorDomains, undefined);
+  assert.ok(driveCdnRule.condition.resourceTypes.includes("sub_frame"));
 });
 
 test("Quark session check updates status on active login and opens pan.quark.cn when logged out", async () => {
