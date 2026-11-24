@@ -16,7 +16,7 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
       </div>
 
       <p class="hint" data-role="hint">
-        直接复用浏览器已登录的 <code>pan.quark.cn</code> 会话，免配置即可浏览器直下与整文件夹流式写盘。
+        直接复用浏览器已登录的 <code>pan.quark.cn</code> 会话，浏览器直下、整文件夹写盘与推送本机 Aria2 均免配可用（Cookie 仅实时传给本机 Aria2，不落盘不上传）。
       </p>
 
       <div class="row" style="margin-top: 8px;">
@@ -34,7 +34,7 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
       </div>
 
       <details class="sub-details">
-        <summary class="clickable sub-summary">夸克高级设置（客户端 UA / 本地 Aria2 Cookie）</summary>
+        <summary class="clickable sub-summary">夸克高级设置（客户端 UA / 手动覆盖 Aria2 Cookie）</summary>
         <div class="sub-body">
           <label class="label">夸克客户端 User-Agent（用于绕过网页端 code=23018 限制）</label>
           <div class="row">
@@ -43,10 +43,10 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
           </div>
 
           <label class="label" style="margin-top: 8px;">
-            本地 Aria2 专用 Cookie（可选；浏览器直下无需填写，绝不自动抓 Cookie）
+            手动覆盖 Aria2 Cookie（通常留空即可，默认自动复用本机浏览器会话）
           </label>
           <div class="row">
-            <input type="password" data-role="cookieInput" placeholder="可选：仅推送本机 Aria2 时粘贴" />
+            <input type="password" data-role="cookieInput" placeholder="留空：自动读取当前夸克会话（仅发往本机 Aria2）" />
             <button type="button" class="btn-secondary" data-role="saveCookieBtn">保存</button>
           </div>
         </div>
@@ -190,6 +190,6 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
   }
 
   cookieInput.placeholder = st.hasAria2Cookie
-    ? "已设置本地 Aria2 Cookie（留空点保存可清空）"
-    : "可选：仅推送本机 Aria2 时粘贴";
+    ? "已设置手动覆盖 Cookie（留空点保存恢复自动复用）"
+    : "留空：自动读取当前夸克会话（仅发往本机 Aria2）";
 }

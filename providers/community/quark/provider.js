@@ -261,6 +261,82 @@ async function checkQuarkSession() {
   return { loggedIn: false, nickname: "" };
 }
 
+export function sanitizeCookieInput(raw) {
+  if (!raw || typeof raw !== "string") return "";
+  return raw
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .replace(/^cookie\s*:\s*/i, "")
+    .trim();
+}
+
+export function isTrustedLocalAria2Url(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host === "[::1]" ||
+      host.endsWith(".local")
+    ) {
+      return true;
+    }
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    const m172 = host.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+    if (m172) {
+      const second = Number(m172[1]);
+      if (second >= 16 && second <= 31) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reads active Quark session cookies from the browser cookie jar on-demand
+ * exclusively for forwarding to the user's local Aria2 RPC. Never persisted or logged.
+ */
+async function readQuarkSessionCookieHeader(targetUrl) {
+  if (typeof chrome === "undefined" || !chrome.cookies?.getAll) {
+    return "";
+  }
+
+  const byName = new Map();
+  const collect = (cookies) => {
+    for (const c of cookies || []) {
+      const name = String(c?.name || "").replace(/[\r\n;=]/g, "").trim();
+      const val = String(c?.value ?? "").replace(/[\r\n]+/g, "");
+      if (!name || byName.has(name)) continue;
+      byName.set(name, `${name}=${val}`);
+    }
+  };
+
+  // Prefer cookies matching the exact download URL (captures newly rotated __puus)
+  if (targetUrl) {
+    try {
+      collect(await chrome.cookies.getAll({ url: targetUrl }));
+    } catch {
+      // fall through to domain lookup
+    }
+  }
+
+  // Merge root quark.cn cookies as fallback without overwriting exact-URL matches
+  try {
+    collect(await chrome.cookies.getAll({ domain: "quark.cn" }));
+  } catch {
+    // ignore
+  }
+
+  return Array.from(byName.values()).join("; ");
+}
+
 export const quarkProvider = defineProvider({
   id: "quark",
   name: "夸克网盘",
@@ -279,7 +355,7 @@ export const quarkProvider = defineProvider({
       userAgent:
         (raw.userAgent || DEFAULT_QUARK_USER_AGENT).trim() ||
         DEFAULT_QUARK_USER_AGENT,
-      aria2Cookie: (raw.aria2Cookie || "").trim(),
+      aria2Cookie: sanitizeCookieInput(raw.aria2Cookie || ""),
       loggedIn: Boolean(raw.loggedIn),
       nickname: (raw.nickname || "").trim(),
       checkedAt: Number(raw.checkedAt) || 0,
@@ -302,14 +378,31 @@ export const quarkProvider = defineProvider({
     return buildQuarkDownloadRequestHeaders(config.userAgent);
   },
 
-  getAria2Headers(config) {
+  async getAria2Headers(config, { url, coreConfig } = {}) {
     const headers = [
       `User-Agent: ${config.userAgent}`,
       `Referer: ${QUARK_REFERER}`,
     ];
-    if (config.aria2Cookie) {
-      headers.push(`Cookie: ${config.aria2Cookie}`);
+
+    let cookieHeader = sanitizeCookieInput(config.aria2Cookie || "");
+
+    if (!cookieHeader) {
+      const rpcUrl = coreConfig?.aria2Url || "http://localhost:6800/jsonrpc";
+      if (!isTrustedLocalAria2Url(rpcUrl)) {
+        throw new Error(
+          `安全保护：拒绝将浏览器夸克会话 Cookie 自动发送至非本机/局域网 Aria2 地址（${rpcUrl}）。如需使用远程 Aria2，请手动填写 Cookie 或改用本机 Aria2。`
+        );
+      }
+
+      cookieHeader = await readQuarkSessionCookieHeader(url);
+      if (!cookieHeader || !/(?:^|;\s*)__puus=/.test(cookieHeader)) {
+        throw new Error(
+          "未读取到有效的夸克登录 Cookie（缺少 __puus），请确认已在当前浏览器登录 pan.quark.cn，并刷新扩展授权 cookies 权限后重试。"
+        );
+      }
     }
+
+    headers.push(`Cookie: ${cookieHeader}`);
     return headers;
   },
 

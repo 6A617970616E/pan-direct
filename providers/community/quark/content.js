@@ -107,7 +107,5 @@
     getSelectedItemsFromDom,
     emptyErrorHint:
       "读取目录失败，请确认当前浏览器已登录 pan.quark.cn，然后点击「刷新」。",
-    aria2Notice:
-      "提示：夸克下载节点校验浏览器登录 Cookie。推荐使用「浏览器直下」免配置下载；如需推送 Aria2，请在插件弹窗的「夸克高级设置」中填写本地 Aria2 专用 Cookie。",
   });
 })();

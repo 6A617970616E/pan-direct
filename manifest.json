@@ -26,7 +26,8 @@
     "declarativeNetRequest",
     "downloads",
     "storage",
-    "tabs"
+    "tabs",
+    "cookies"
   ],
   "host_permissions": [
     "*://*.baidu.com/*",

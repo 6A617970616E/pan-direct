@@ -119,10 +119,6 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
     const effectiveMode = mode || coreConfig.downloadMode || "browser";
 
     const targets = await provider.resolveDownloadTargets(itemIds, providerCtx);
-    const aria2Headers =
-      typeof provider.getAria2Headers === "function"
-        ? provider.getAria2Headers(providerConfig)
-        : [];
     const results = [];
 
     for (const target of targets) {
@@ -144,10 +140,18 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
                 if (!provider.isAllowedDownloadUrl(target.url)) {
                   throw new Error("直链域名不在白名单范围内，已拒绝推送。");
                 }
+                const headers =
+                  target.aria2Headers ||
+                  (typeof provider.getAria2Headers === "function"
+                    ? await provider.getAria2Headers(providerConfig, {
+                        url: target.url,
+                        coreConfig,
+                      })
+                    : []);
                 return pushToAria2({
                   url: target.url,
                   filename: target.filename,
-                  headers: target.aria2Headers || aria2Headers,
+                  headers,
                   coreConfig,
                 });
               })()
@@ -222,7 +226,10 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
     const headers =
       resolved.aria2Headers ||
       (typeof provider.getAria2Headers === "function"
-        ? provider.getAria2Headers(providerConfig)
+        ? await provider.getAria2Headers(providerConfig, {
+            url: resolved.url,
+            coreConfig,
+          })
         : []);
 
     return pushToAria2({
@@ -259,7 +266,7 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
       }
       const headers =
         typeof provider.getAria2Headers === "function"
-          ? provider.getAria2Headers(providerConfig)
+          ? await provider.getAria2Headers(providerConfig, { url, coreConfig })
           : [];
       return pushToAria2({
         url,

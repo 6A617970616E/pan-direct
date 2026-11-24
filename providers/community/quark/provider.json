@@ -9,6 +9,9 @@
   "popupEntry": "popup-card.js",
   "popupExportName": "renderQuarkPopupCard",
   "manifest": {
+    "permissions": [
+      "cookies"
+    ],
     "host_permissions": [
       "*://*.quark.cn/*",
       "*://*.uc.cn/*"

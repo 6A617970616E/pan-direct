@@ -12,8 +12,10 @@ import {
   DEFAULT_QUARK_USER_AGENT,
   isAllowedQuarkDownloadUrl,
   isQuarkDirItem,
+  isTrustedLocalAria2Url,
   normalizeQuarkDirId,
   quarkProvider,
+  sanitizeCookieInput,
 } from "../providers/community/quark/provider.js";
 import { buildEdition } from "../scripts/build.mjs";
 
@@ -21,7 +23,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "..");
 
-function createMockChrome(initialLocal = {}) {
+function createMockChrome(initialLocal = {}, mockCookies = []) {
   const localStore = { ...initialLocal };
   const sessionStore = {};
   let dynamicRules = [];
@@ -32,6 +34,9 @@ function createMockChrome(initialLocal = {}) {
       id: "test-ext-id",
       getManifest: () => ({ version: "0.4.0" }),
       getURL: (p) => `chrome-extension://test-ext-id/${p.replace(/^\/+/, "")}`,
+    },
+    cookies: {
+      getAll: async () => [...mockCookies],
     },
     storage: {
       local: {
@@ -433,11 +438,69 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     assert.equal(streamRes.ok, true);
     assert.equal(streamRes.credentials, "include");
 
-    // 3. Aria2 push includes Quark UA, Referer, and optional user-provided aria2Cookie
+    // 3. Aria2 push automatically forwards ephemeral browser session cookies without persisting them
+    const { mockChrome: cookieChrome, state: cookieState } = createMockChrome(
+      { enabled: true },
+      [
+        { name: "__puus", value: "live_session_puus" },
+        { name: "__uid", value: "uid_123" },
+      ]
+    );
+    globalThis.chrome = cookieChrome;
+    const autoRuntime = createBackgroundRuntime([baiduProvider, quarkProvider]);
+
+    const autoAriaRes = await autoRuntime.handleMessage({
+      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+      provider: "quark",
+      itemId: "fid_demo_1",
+      relativePath: "Movies/movie.mkv",
+    });
+    assert.equal(autoAriaRes.ok, true);
+    assert.equal(autoAriaRes.gid, "gid_quark_01");
+    const autoOpts = capturedAria2Body.params[1];
+    assert.equal(autoOpts.out, "Movies/movie.mkv");
+    assert.ok(
+      autoOpts.header.some(
+        (h) => h.startsWith("User-Agent: ") && h.includes("quark-cloud-drive/")
+      )
+    );
+    assert.ok(autoOpts.header.includes("Referer: https://pan.quark.cn/"));
+    assert.ok(
+      autoOpts.header.includes("Cookie: __puus=live_session_puus; __uid=uid_123")
+    );
+    // Must NEVER persist auto-read browser cookies to storage
+    assert.equal(cookieState.localStore.providerConfigs?.quark?.aria2Cookie, undefined);
+
+    // 4. Refuse auto-sending browser session cookies to non-local public Aria2 RPC URLs
+    await autoRuntime.handleMessage({
+      type: "PANDIRECT_SET_CONFIG",
+      aria2Url: "https://remote.example.com:6800/jsonrpc",
+    });
+    await assert.rejects(
+      () =>
+        autoRuntime.handleMessage({
+          type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+          provider: "quark",
+          itemId: "fid_demo_1",
+        }),
+      /安全保护/
+    );
+
+    // 5. Manual aria2Cookie override strips accidental "Cookie:" prefix and newlines
+    assert.equal(
+      sanitizeCookieInput("Cookie: __puus=abc\n; __uid=1 "),
+      "__puus=abc ; __uid=1"
+    );
+    assert.equal(isTrustedLocalAria2Url("http://localhost:6800/jsonrpc"), true);
+    assert.equal(isTrustedLocalAria2Url("http://127.0.0.1:16800/jsonrpc"), true);
+    assert.equal(isTrustedLocalAria2Url("http://192.168.1.10:6800/jsonrpc"), true);
+    assert.equal(isTrustedLocalAria2Url("https://evil.example/jsonrpc"), false);
+
+    globalThis.chrome = mockChrome;
     await runtime.handleMessage({
       type: "PANDIRECT_SET_CONFIG",
       provider: "quark",
-      providerConfig: { aria2Cookie: "__puus=demo_cookie" },
+      providerConfig: { aria2Cookie: "Cookie: __puus=demo_cookie\n" },
     });
     const ariaRes = await runtime.handleMessage({
       type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
@@ -446,14 +509,9 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
       relativePath: "Movies/movie.mkv",
     });
     assert.equal(ariaRes.ok, true);
-    assert.equal(ariaRes.gid, "gid_quark_01");
-    const ariaOpts = capturedAria2Body.params[1];
-    assert.equal(ariaOpts.out, "Movies/movie.mkv");
-    assert.ok(ariaOpts.header.some((h) => h.startsWith("User-Agent: ") && h.includes("quark-cloud-drive/")));
-    assert.ok(ariaOpts.header.includes("Referer: https://pan.quark.cn/"));
-    assert.ok(ariaOpts.header.includes("Cookie: __puus=demo_cookie"));
+    assert.ok(capturedAria2Body.params[1].header.includes("Cookie: __puus=demo_cookie"));
 
-    // 4. code=23018 returns clear guidance
+    // 6. code=23018 returns clear guidance
     simulate23018 = true;
     await assert.rejects(
       () =>
@@ -534,7 +592,7 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
   );
 });
 
-test("Real repo dual-artifact build keeps Quark 100% out of store.zip and wires it into community.zip", async () => {
+test("Real repo dual-artifact build keeps Quark and cookies 100% out of store.zip and wires them into community.zip", async () => {
   const tempDist = fs.mkdtempSync(path.join(os.tmpdir(), "pandirect-quark-dist-"));
   try {
     const storeRes = buildEdition({
@@ -557,6 +615,7 @@ test("Real repo dual-artifact build keeps Quark 100% out of store.zip and wires 
     const storeManifest = JSON.parse(
       fs.readFileSync(path.join(storeRes.outDir, "manifest.json"), "utf8")
     );
+    assert.equal(storeManifest.permissions.includes("cookies"), false);
     assert.equal(
       storeManifest.host_permissions.some((h) => h.includes("quark")),
       false
@@ -576,6 +635,7 @@ test("Real repo dual-artifact build keeps Quark 100% out of store.zip and wires 
     const communityManifest = JSON.parse(
       fs.readFileSync(path.join(communityRes.outDir, "manifest.json"), "utf8")
     );
+    assert.equal(communityManifest.permissions.includes("cookies"), true);
     assert.ok(communityManifest.host_permissions.includes("*://*.quark.cn/*"));
     assert.ok(
       communityManifest.content_scripts.some((cs) =>

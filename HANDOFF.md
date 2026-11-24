@@ -88,13 +88,13 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
    - `providers/index.js` 与 `providers/popup-index.js` 必须使用静态 ES `import` 导出当前版本启用的适配器，由 `scripts/build.mjs` 在构建 `store` / `community` 产物时按 `provider.json` 自动生成。
 
 6. **夸克网盘社区版关键要点（仅 `community.zip`）**
-   - 夸克 `POST /1/clouddrive/file/download` 用普通浏览器 UA 会触发 `code=23018`（强制要求桌面客户端），必须由 DNR 为扩展发起的该接口请求与 `||pds.quark.cn/` 下载节点注入 `quark-cloud-drive/...` 客户端 UA 及 `Referer: https://pan.quark.cn/`。
-   - 夸克下载节点（`*.pds.quark.cn`）依赖 OSS callback 校验浏览器会话 Cookie，因此 1 字节预检与 `downloader.html` 流式 `fetch` 均需按 Provider 声明透传 `credentials: "include"`，且 `||pds.quark.cn/` DNR 规则**不可**排除 `pan.quark.cn`（以保障页面隐藏 `<iframe>` 命中）。
-   - 严格保持零 `cookies` 权限，绝不静默抓取/导出浏览器 Cookie；仅当用户主动推送本机 Aria2 时可选手动配置 `aria2Cookie`。
+   - 夸克 `POST /1/clouddrive/file/download` 用普通浏览器 UA 会触发 `code=23018`（强制要求桌面客户端），必须由 DNR 为扩展发起的该接口请求与 `||pds.quark.cn/`、`.drive.quark.cn/` 下载节点注入 `quark-cloud-drive/...` 客户端 UA 及 `Referer: https://pan.quark.cn/`。
+   - 夸克下载节点（`*.pds.quark.cn` / `*.drive.quark.cn`）依赖 OSS callback 校验浏览器会话 Cookie，因此 1 字节预检与 `downloader.html` 流式 `fetch` 均需按 Provider 声明透传 `credentials: "include"`，且下载节点 DNR 规则**不可**排除 `pan.quark.cn`（以保障页面隐藏 `<iframe>` 命中）。
+   - **权限隔离**：仅 `providers/community/quark/provider.json` 声明 `cookies` 权限，在推送夸克直链至本机/局域网 Aria2 时按需实时读取 `.quark.cn` 会话 Cookie（不落盘、不输出日志、拒绝发送至非本机/局域网地址）；`dist/store.zip` 构建时严格断言绝不含 `cookies` 权限或任何夸克代码。
 
 7. **安全与合规边界**
    - 仓库内**绝不硬编码**任何个人 `AppKey` / `SecretKey` / `access_token`。
-   - **绝不做**后台静默自动确认 OAuth 授权或读取导出 `BDUSS` / `__puus` Cookie。
+   - 商店版 `dist/store.zip` 严格零 `cookies` 权限、绝不静默自动确认 OAuth 或碰 `BDUSS` Cookie；社区版读取 `.quark.cn` Cookie 仅限推送本机/局域网 Aria2 时内存透传，不落盘不上传。
    - 下载域名严格按 Provider 白名单校验，`PANDIRECT_GET_FILE_STREAM_URL` 仅允许来自 `downloader/` 扩展页的调用。
 
 ---

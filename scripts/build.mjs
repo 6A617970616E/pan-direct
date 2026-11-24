@@ -212,6 +212,14 @@ export function assembleManifest({ baseManifest, edition, providers }) {
     manifest.description = `${baseManifest.description}（社区版：包含官方开放平台与社区实验性网盘适配器）`;
   }
 
+  const permissionSet = new Set(baseManifest.permissions || []);
+  for (const p of providers) {
+    for (const perm of p.manifest?.permissions || []) {
+      permissionSet.add(perm);
+    }
+  }
+  manifest.permissions = Array.from(permissionSet);
+
   const hostPermissionSet = new Set();
   for (const p of providers) {
     for (const host of p.manifest?.host_permissions || []) {
@@ -355,8 +363,13 @@ export function verifyEditionDirectory({ edition, outDir, manifest, providers })
     }
   }
 
-  // Store edition MUST NOT include any community provider files or imports
+  // Store edition MUST NOT include any community provider files, imports, or cookies permission
   if (edition === "store") {
+    if ((manifest.permissions || []).includes("cookies")) {
+      throw new Error(
+        "[store] Store build must not request the `cookies` permission"
+      );
+    }
     const communityDir = path.join(outDir, "providers", "community");
     if (fs.existsSync(communityDir)) {
       throw new Error(
