@@ -115,5 +115,6 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
    - 在 `providers/community/` 中支持依赖浏览器网页会话的实验性网盘（夸克网盘 `providers/community/quark/` 已真机跑通浏览器直下与本机 Aria2 推送），通过 `npm run build` 分离输出 `dist/store.zip` 与 `dist/community.zip`，`store.zip` 零社区代码与权限残留。
 3. **待打磨体验项**
    - ✅ 已完成：重构 `core/` + `providers/official/` + `providers/community/` 双构建打包脚本与自动化测试；
-   - ✅ 已完成（分支 `feat/quark-provider`）：夸克网盘社区适配器（单文件浏览器直下、本机 Aria2 零配置自动复用会话已真机验证通过）；
-   - ⬜ 待做：合并 `feat/quark-provider` 至 `main`、接入 123云盘官方 Provider、补充「复制直链 / 复制 curl 命令」、弹窗显示百度账号昵称（`xpan/nas?method=uinfo`）、隐私政策文档（商店提审必需）。
+   - ✅ 已完成：夸克网盘社区适配器（已合并入 `main`，单文件浏览器直下、本机 Aria2 零配置自动复用会话已真机验证通过）；
+   - ✅ 已完成：中英文隐私政策（`PRIVACY.md`）、商店上架提审指南（`docs/STORE_SUBMISSION.md`）与 `dist/store.zip` 合规加固（去除 `localhost` `content-bridge.js`、补齐 `homepage_url` 与弹窗隐私链接）；
+   - ⬜ 待做：准备商店截图与 `300×300`/`440×280` 视觉素材并提交 Edge Add-ons & Chrome Web Store、接入 123云盘官方 Provider、补充「复制直链 / 复制 curl 命令」、弹窗显示百度账号昵称（`xpan/nas?method=uinfo`）。

@@ -42,6 +42,8 @@
 
 本项目采用 `core/` + `providers/official/` + `providers/community/` 分层架构，零第三方 npm 依赖：
 
+- **商店正式版（`dist/store.zip`）**：仅包含 100% 官方 OpenAPI 适配器（百度网盘），最小权限集（无 `cookies` 权限、无 `localhost` 网页脚本注入），用于上架 Microsoft Edge Add-ons 与 Chrome Web Store；提审指南见 [docs/STORE_SUBMISSION.md](./docs/STORE_SUBMISSION.md)。
+- **社区版（`dist/community.zip`）**：额外包含社区实验性适配器（如夸克网盘，支持浏览器直下与本机 Aria2 零配置自动复用会话），仅通过 GitHub Releases / 源码构建分发。
 - **直接开发加载**：仓库根目录自带已同步的 `manifest.json`，可直接加载解压测试。
 - **双产物构建**（Node.js >= 18）：
   ```bash
@@ -54,8 +56,8 @@
 
 ---
 
-## 说明与合规声明
+## 隐私与合规声明
 
-* 本项目仅调用百度网盘开放平台公开文档接口（OAuth 2.0、`xpan/file`、`xpan/multimedia`），**不包含任何解除非会员限速、破解会员或账号池共享功能**，下载速度由用户自身百度账号权限决定。
-* 本项目不收集、不上传任何用户数据、Cookie 或文件信息，仅供个人合法管理与下载自有网盘文件使用。
+* **隐私政策**：请阅读完整的中英文隐私政策 [PRIVACY.md](./PRIVACY.md)（纯本地运行、零开发者后台、无埋点统计、不上传任何用户数据）。
+* 本项目商店正式版仅调用网盘开放平台公开文档接口（OAuth 2.0、`xpan/file`、`xpan/multimedia`），**不包含任何解除非会员限速、破解会员或账号池共享功能**，下载速度由用户自身网盘账号权限决定。
 * 开源协议：[MIT License](./LICENSE)。

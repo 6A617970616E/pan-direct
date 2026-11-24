@@ -442,7 +442,24 @@ button:disabled {
 .footer {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 11px;
   color: var(--muted);
   padding: 2px 2px 0;
+}
+
+.footer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.footer-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.footer-link:hover {
+  text-decoration: underline;
 }

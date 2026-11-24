@@ -237,8 +237,10 @@ export function assembleManifest({ baseManifest, edition, providers }) {
       mergedContentScripts.push(structuredClone(cs));
     }
   }
-  for (const cs of baseManifest.content_scripts || []) {
-    mergedContentScripts.push(structuredClone(cs));
+  if (edition !== "store") {
+    for (const cs of baseManifest.content_scripts || []) {
+      mergedContentScripts.push(structuredClone(cs));
+    }
   }
   manifest.content_scripts = mergedContentScripts;
 
@@ -401,6 +403,22 @@ export function verifyEditionDirectory({ edition, outDir, manifest, providers })
         "[store] Store providers/popup-index.js must not import community providers"
       );
     }
+    if (fs.existsSync(path.join(outDir, "core", "content-bridge.js"))) {
+      throw new Error(
+        "[store] Store build must not ship dev-only core/content-bridge.js"
+      );
+    }
+    const hasLocalhostContentScript = (manifest.content_scripts || []).some(
+      (cs) =>
+        (cs.matches || []).some(
+          (m) => m.includes("localhost") || m.includes("127.0.0.1")
+        )
+    );
+    if (hasLocalhostContentScript) {
+      throw new Error(
+        "[store] Store build must not inject content_scripts on localhost/127.0.0.1"
+      );
+    }
   }
 
   // Ensure dev-only files are never shipped in release zips
@@ -411,6 +429,7 @@ export function verifyEditionDirectory({ edition, outDir, manifest, providers })
     "manifest.base.json",
     "scripts",
     "tests",
+    "docs",
   ];
   for (const forbidden of forbiddenFiles) {
     if (fs.existsSync(path.join(outDir, forbidden))) {
@@ -444,6 +463,9 @@ export function buildEdition({
     copyFilteredRecursive(path.join(rootDir, dir), path.join(outDir, dir), {
       excludeMarkdown: true,
     });
+  }
+  if (edition === "store") {
+    fs.rmSync(path.join(outDir, "core", "content-bridge.js"), { force: true });
   }
 
   const runtimeFiles = [

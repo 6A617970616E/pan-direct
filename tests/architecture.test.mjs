@@ -493,7 +493,21 @@ export const mockPanProvider = defineProvider({
     );
     assert.equal(storeManifest.name, "PanDirect");
     assert.equal(
+      storeManifest.homepage_url,
+      "https://github.com/6A617970616E/pan-direct"
+    );
+    assert.equal(
       storeManifest.host_permissions.includes("https://pan.mock.example/*"),
+      false
+    );
+    assert.equal(
+      fs.existsSync(path.join(storeRes.outDir, "core", "content-bridge.js")),
+      false
+    );
+    assert.equal(
+      storeManifest.content_scripts.some((cs) =>
+        cs.matches.some((m) => m.includes("localhost") || m.includes("127.0.0.1"))
+      ),
       false
     );
 
@@ -544,5 +558,28 @@ export const mockPanProvider = defineProvider({
     assert.equal(communityEditionMod.EDITION, "community");
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("PRIVACY.md and Store submission kit exist and accurately document all Store permissions", () => {
+  const privacyPath = path.join(REPO_ROOT, "PRIVACY.md");
+  const submissionGuidePath = path.join(REPO_ROOT, "docs", "STORE_SUBMISSION.md");
+  assert.equal(fs.existsSync(privacyPath), true);
+  assert.equal(fs.existsSync(submissionGuidePath), true);
+
+  const privacyText = fs.readFileSync(privacyPath, "utf8");
+  for (const required of [
+    "declarativeNetRequest",
+    "downloads",
+    "storage",
+    "tabs",
+    "Limited Use",
+    "chrome.storage.local",
+    "PanDirect (Community)",
+  ]) {
+    assert.ok(
+      privacyText.includes(required),
+      `PRIVACY.md must document: ${required}`
+    );
   }
 });
