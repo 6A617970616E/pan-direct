@@ -519,11 +519,25 @@ export const quarkProvider = defineProvider({
       `Referer: ${QUARK_REFERER}`,
     ];
 
+    const rpcUrl = coreConfig?.aria2Url || "http://localhost:6800/jsonrpc";
+    const isLocalRpc = isTrustedLocalAria2Url(rpcUrl);
+
     let cookieHeader = sanitizeCookieInput(config.aria2Cookie || "");
+    const hasKeyValuePair = /(?:^|;\s*)[^;=\s]+=[^;]*/.test(cookieHeader);
+
+    if (cookieHeader && !hasKeyValuePair) {
+      if (isLocalRpc) {
+        // Ignore malformed legacy/bare-token manual override on local Aria2 and use live browser cookies
+        cookieHeader = "";
+      } else {
+        throw new Error(
+          "手动填写的夸克 Aria2 Cookie 格式无效（缺少 key=value，例如 __puus=xxx），请重新填写完整 Cookie。"
+        );
+      }
+    }
 
     if (!cookieHeader) {
-      const rpcUrl = coreConfig?.aria2Url || "http://localhost:6800/jsonrpc";
-      if (!isTrustedLocalAria2Url(rpcUrl)) {
+      if (!isLocalRpc) {
         throw new Error(
           `安全保护：拒绝将浏览器夸克会话 Cookie 自动发送至非本机/局域网 Aria2 地址（${rpcUrl}）。如需使用远程 Aria2，请手动填写 Cookie 或改用本机 Aria2。`
         );

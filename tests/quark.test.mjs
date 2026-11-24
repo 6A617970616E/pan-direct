@@ -580,6 +580,24 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     });
     assert.equal(selectedHeader, "__puus=api_freshest_puus; __pus=pus_val");
 
+    globalThis.chrome = cookieChrome;
+    await autoRuntime.handleMessage({
+      type: "PANDIRECT_SET_CONFIG",
+      aria2Url: "http://localhost:6800/jsonrpc",
+      provider: "quark",
+      providerConfig: { aria2Cookie: "bare_raw_token_without_equals_sign_193bytes" },
+    });
+    const fallbackRes = await autoRuntime.handleMessage({
+      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+      provider: "quark",
+      itemId: "fid_demo_1",
+      relativePath: "Movies/movie.mkv",
+    });
+    assert.equal(fallbackRes.ok, true);
+    assert.deepEqual(capturedAria2Body.params[1].header, [
+      "Cookie: __puus=live_session_puus; __uid=uid_123",
+    ]);
+
     globalThis.chrome = mockChrome;
     await runtime.handleMessage({
       type: "PANDIRECT_SET_CONFIG",
