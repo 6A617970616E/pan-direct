@@ -86,7 +86,7 @@ function renderStatus(res) {
     statusText.textContent = "已启用 · 自动注入下载规则";
   } else {
     statusDot.classList.remove("active");
-    statusText.textContent = "已暂停 · 未拦截下载请求";
+    statusText.textContent = "已暂停 · 规则与页面悬浮窗已隐藏";
   }
 
   if (res.appKey && !appKeyInput.value) {

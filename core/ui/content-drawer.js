@@ -90,6 +90,7 @@
 
     const root = document.createElement("div");
     root.id = "pandirect-root";
+    root.className = "pd-hidden";
     root.innerHTML = `
       <button id="pd-fab" title="打开 PanDirect 直链下载面板">
         <span class="pd-fab-badge">PD</span>
@@ -499,6 +500,42 @@
 
       await triggerDownloadItems(targetIds);
     });
+
+    function applyEnabledState(enabled) {
+      const isEnabled = enabled !== false;
+      root.classList.toggle("pd-hidden", !isEnabled);
+      if (!isEnabled) {
+        drawer.classList.add("pd-hidden");
+      }
+    }
+
+    async function initEnabledVisibility() {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local?.get) {
+          const stored = await chrome.storage.local.get({ enabled: true });
+          applyEnabledState(stored?.enabled !== false);
+          return;
+        }
+      } catch {
+        // fall through to background status check
+      }
+
+      try {
+        const status = await sendMessage({ type: "PANDIRECT_GET_STATUS" });
+        applyEnabledState(status?.ok ? status.enabled !== false : true);
+      } catch {
+        applyEnabledState(true);
+      }
+    }
+
+    if (typeof chrome !== "undefined" && chrome.storage?.onChanged?.addListener) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== "local" || !changes.enabled) return;
+        applyEnabledState(changes.enabled.newValue);
+      });
+    }
+
+    initEnabledVisibility();
   }
 
   window.PanDirectDrawer = { mount };

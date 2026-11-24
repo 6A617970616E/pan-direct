@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
@@ -582,4 +583,129 @@ test("PRIVACY.md and Store submission kit exist and accurately document all Stor
       `PRIVACY.md must document: ${required}`
     );
   }
+});
+
+test("core/ui/content-drawer hides floating FAB and open drawer immediately when extension is disabled", async () => {
+  const drawerCode = fs.readFileSync(
+    path.join(REPO_ROOT, "core", "ui", "content-drawer.js"),
+    "utf8"
+  );
+
+  function createClassList(initial = []) {
+    const set = new Set(initial);
+    return {
+      add: (cls) => set.add(cls),
+      remove: (cls) => set.delete(cls),
+      contains: (cls) => set.has(cls),
+      toggle: (cls, force) => {
+        if (force === undefined) {
+          if (set.has(cls)) {
+            set.delete(cls);
+            return false;
+          }
+          set.add(cls);
+          return true;
+        }
+        if (force) set.add(cls);
+        else set.delete(cls);
+        return Boolean(force);
+      },
+    };
+  }
+
+  function createStubEl(initialClasses = []) {
+    const classList = createClassList(initialClasses);
+    return {
+      id: "",
+      _className: initialClasses.join(" "),
+      get className() {
+        return this._className;
+      },
+      set className(val) {
+        this._className = String(val || "");
+        for (const c of this._className.split(/\s+/).filter(Boolean)) {
+          classList.add(c);
+        }
+      },
+      classList,
+      textContent: "",
+      title: "",
+      innerHTML: "",
+      addEventListener: () => {},
+      appendChild: () => {},
+    };
+  }
+
+  const childMap = {
+    "#pd-fab": createStubEl(),
+    "#pd-drawer": createStubEl(["pd-hidden"]),
+    "#pd-close": createStubEl(),
+    "#pd-current-path": createStubEl(),
+    "#pd-notice": createStubEl(["pd-hidden"]),
+    "#pd-list": createStubEl(),
+    "#pd-up": createStubEl(["pd-hidden"]),
+    "#pd-refresh": createStubEl(),
+    "#pd-dl-dir": createStubEl(),
+    "#pd-dl-selected": createStubEl(),
+  };
+
+  let mountedRoot = null;
+  const storageListeners = [];
+  const fakeWindow = {};
+  const fakeDocument = {
+    createElement: () => {
+      const el = createStubEl();
+      el.querySelector = (sel) => childMap[sel] || null;
+      el.querySelectorAll = () => [];
+      return el;
+    },
+    body: {
+      appendChild: (el) => {
+        mountedRoot = el;
+      },
+    },
+  };
+  const fakeChrome = {
+    storage: {
+      local: {
+        get: async () => ({ enabled: false }),
+      },
+      onChanged: {
+        addListener: (fn) => storageListeners.push(fn),
+      },
+    },
+    runtime: {
+      sendMessage: (_msg, cb) => cb && cb({ ok: true, enabled: false }),
+    },
+  };
+
+  vm.runInNewContext(drawerCode, {
+    window: fakeWindow,
+    document: fakeDocument,
+    chrome: fakeChrome,
+    setTimeout,
+  });
+
+  fakeWindow.PanDirectDrawer.mount({
+    providerId: "baidu",
+    providerName: "百度网盘",
+  });
+
+  // Flush microtask for initEnabledVisibility()
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Starts hidden when enabled=false
+  assert.ok(mountedRoot);
+  assert.equal(mountedRoot.classList.contains("pd-hidden"), true);
+  assert.equal(storageListeners.length, 1);
+
+  // Enabling shows floating root
+  storageListeners[0]({ enabled: { oldValue: false, newValue: true } }, "local");
+  assert.equal(mountedRoot.classList.contains("pd-hidden"), false);
+
+  // Open drawer, then disable -> hides BOTH floating root and open drawer
+  childMap["#pd-drawer"].classList.remove("pd-hidden");
+  storageListeners[0]({ enabled: { oldValue: true, newValue: false } }, "local");
+  assert.equal(mountedRoot.classList.contains("pd-hidden"), true);
+  assert.equal(childMap["#pd-drawer"].classList.contains("pd-hidden"), true);
 });
