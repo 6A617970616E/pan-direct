@@ -203,7 +203,12 @@ export function discoverProvidersForEdition(rootDir, edition) {
   return all;
 }
 
-export function assembleManifest({ baseManifest, edition, providers }) {
+export function assembleManifest({
+  baseManifest,
+  edition,
+  providers,
+  includeDevBridge = false,
+}) {
   const manifest = structuredClone(baseManifest);
 
   if (edition === "community") {
@@ -237,7 +242,7 @@ export function assembleManifest({ baseManifest, edition, providers }) {
       mergedContentScripts.push(structuredClone(cs));
     }
   }
-  if (edition === "dev") {
+  if (edition === "dev" && includeDevBridge) {
     for (const cs of baseManifest.content_scripts || []) {
       mergedContentScripts.push(structuredClone(cs));
     }
@@ -534,7 +539,10 @@ export function buildEdition({
  * Syncs root `manifest.json`, `providers/index.js`, and `providers/popup-index.js`
  * so developers can load the repository root directly via "Load unpacked" without building.
  */
-export function syncRootManifestAndRegistry(rootDir = DEFAULT_ROOT_DIR) {
+export function syncRootManifestAndRegistry(
+  rootDir = DEFAULT_ROOT_DIR,
+  { includeDevBridge = false } = {}
+) {
   const baseManifest = JSON.parse(
     fs.readFileSync(path.join(rootDir, "manifest.base.json"), "utf8")
   );
@@ -543,6 +551,7 @@ export function syncRootManifestAndRegistry(rootDir = DEFAULT_ROOT_DIR) {
     baseManifest,
     edition: "dev",
     providers,
+    includeDevBridge,
   });
 
   fs.writeFileSync(
@@ -571,6 +580,7 @@ function parseArgs(argv) {
   let target = "all";
   let syncRoot = false;
   let noDist = false;
+  let includeDevBridge = false;
 
   for (const arg of argv) {
     if (arg.startsWith("--target=")) {
@@ -579,18 +589,24 @@ function parseArgs(argv) {
       syncRoot = true;
     } else if (arg === "--no-dist") {
       noDist = true;
+    } else if (arg === "--with-dev-bridge") {
+      includeDevBridge = true;
     }
   }
-  return { target, syncRoot, noDist };
+  return { target, syncRoot, noDist, includeDevBridge };
 }
 
 function main() {
-  const { target, syncRoot, noDist } = parseArgs(process.argv.slice(2));
+  const { target, syncRoot, noDist, includeDevBridge } = parseArgs(
+    process.argv.slice(2)
+  );
 
   if (syncRoot) {
-    const synced = syncRootManifestAndRegistry(DEFAULT_ROOT_DIR);
+    const synced = syncRootManifestAndRegistry(DEFAULT_ROOT_DIR, {
+      includeDevBridge,
+    });
     console.log(
-      `[PanDirect] Synced root manifest.json & providers/index.js (v${synced.version}, providers: ${synced.providers.join(", ") || "none"})`
+      `[PanDirect] Synced root manifest.json & providers/index.js (v${synced.version}, providers: ${synced.providers.join(", ") || "none"}, devBridge: ${includeDevBridge})`
     );
   }
 

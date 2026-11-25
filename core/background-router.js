@@ -174,6 +174,14 @@ export function createBackgroundRuntime(providers, { edition = EDITION } = {}) {
     };
   }
 
+  async function isDevBridgeAllowed(sender) {
+    if (edition !== "dev" || !isLocalhostBridgeSender(sender)) {
+      return false;
+    }
+    const coreConfig = await storage.getCoreConfig();
+    return Boolean(coreConfig.devBridgeEnabled);
+  }
+
   async function handleMessage(message, sender = {}) {
     switch (message?.type) {
       case "PANDIRECT_GET_STATUS": {
@@ -186,7 +194,7 @@ export function createBackgroundRuntime(providers, { edition = EDITION } = {}) {
             ...(await buildPublicStatus()),
           };
         }
-        if (edition === "dev" && isLocalhostBridgeSender(sender)) {
+        if (await isDevBridgeAllowed(sender)) {
           return {
             ok: true,
             ...(await buildMinimalBridgeStatus()),
@@ -399,8 +407,7 @@ export function createBackgroundRuntime(providers, { edition = EDITION } = {}) {
       }
 
       case "PANDIRECT_DOWNLOAD": {
-        const allowBridge = edition === "dev" && isLocalhostBridgeSender(sender);
-        if (!isPopupSender(sender) && !allowBridge) {
+        if (!isPopupSender(sender) && !(await isDevBridgeAllowed(sender))) {
           throw new Error("未授权的调用来源");
         }
         const result = await downloader.downloadDirectUrl({

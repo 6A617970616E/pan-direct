@@ -16,9 +16,10 @@
 ## 3 分钟快速上手
 
 ### 第 1 步：加载扩展
-1. 下载本仓库代码（或 Release 压缩包并解压）。
+1. **推荐**：前往 [GitHub Releases](https://github.com/6A617970616E/pan-direct/releases) 下载对应版本的压缩包并解压（商店正式版 `store.zip` 仅含官方百度网盘适配器；社区版 `community.zip` 额外包含夸克、迅雷适配器；两个发行包均已剔除开发脚本与多余权限）。
+   - 如果从源码构建，可运行 `npm run build` 后加载 `dist/community/`（或 `dist/store/`）；直接加载仓库根目录的 `manifest.json` 也可用于本地开发调试（默认已关闭 `localhost` 桥接脚本注入）。
 2. 打开 Chrome 访问 `chrome://extensions/`（Edge 访问 `edge://extensions/`）。
-3. 打开右上角 **「开发者模式」** → 点击 **「加载已解压的扩展程序」** → 选择本目录。
+3. 打开右上角 **「开发者模式」** → 点击 **「加载已解压的扩展程序」** → 选择解压后的目录。
 
 ### 第 2 步：免费获取你自己的 `AppKey`
 1. 打开 [百度网盘开放平台](https://pan.baidu.com/union/)，登录你的百度账号并完成个人开发者认证。
@@ -43,8 +44,8 @@
 本项目采用 `core/` + `providers/official/` + `providers/community/` 分层架构，零第三方 npm 依赖：
 
 - **商店正式版（`dist/store.zip`）**：仅包含 100% 官方 OpenAPI 适配器（百度网盘），最小权限集（无 `cookies` 权限、无 `localhost` 网页脚本注入），用于上架 Microsoft Edge Add-ons 与 Chrome Web Store；提审指南见 [docs/STORE_SUBMISSION.md](./docs/STORE_SUBMISSION.md)。
-- **社区版（`dist/community.zip`）**：额外包含社区实验性适配器（夸克网盘、迅雷云盘，支持浏览器直下、整文件夹写盘与本机 Aria2 零配置自动复用会话），仅通过 GitHub Releases / 源码构建分发。
-- **直接开发加载**：仓库根目录自带已同步的 `manifest.json`，可直接加载解压测试。
+- **社区版（`dist/community.zip`）**：额外包含社区实验性适配器（夸克网盘、迅雷云盘，支持浏览器直下、整文件夹写盘与本机 Aria2 零配置自动复用会话，同样不含 `localhost` 桥接脚本），仅通过 GitHub Releases / 源码构建分发。
+- **直接开发加载**：仓库根目录自带已同步的 `manifest.json`（默认不注入 `localhost` 桥接脚本，如需本地联调 `test-page.html` 可使用 `node scripts/build.mjs --sync-root --no-dist --with-dev-bridge` 并在扩展存储中手动开启 `devBridgeEnabled`）。
 - **双产物构建**（Node.js >= 18）：
   ```bash
   npm run build            # 同时产出 dist/store.zip 与 dist/community.zip

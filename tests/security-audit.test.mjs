@@ -628,7 +628,99 @@ test("Multi-select browser download keeps distinct per-URL ephemeral session rul
   }
 });
 
-test("Localhost bridge is excluded from Community & Store builds and minimized in Dev", async () => {
+test("Ephemeral DNR session rules allocate free IDs via getSessionRules() across >200 files and SW restarts", async () => {
+  const { mockChrome, state } = createFullChromeMock({ enabled: true });
+  globalThis.chrome = mockChrome;
+
+  // 1. Install 250 rules (exceeding the old 200-slot ring buffer) without overwriting any earlier rule
+  const runtimeBeforeRestart = createBackgroundRuntime([baiduProvider]);
+  const installedIds = [];
+  for (let i = 1; i <= 250; i++) {
+    const res = await runtimeBeforeRestart.dnr.ensureResolvedHostRule({
+      resolvedUrl: `https://edge1.baidupcs.com/file/batch_${i}?sig=${i}`,
+      requestHeaders: [{ header: "user-agent", operation: "set", value: "pan.baidu.com" }],
+      filename: `file_${i}.bin`,
+      forceAttachment: true,
+      preferFrameDownload: true,
+      initiatorDomains: ["pan.baidu.com"],
+    });
+    assert.ok(res?.ruleId);
+    installedIds.push(res.ruleId);
+  }
+
+  assert.equal(state.getSessionRules().length, 250);
+  assert.equal(new Set(installedIds).size, 250);
+  // First file's rule (#1) MUST still exist intact with file_1.bin
+  const firstRule = state
+    .getSessionRules()
+    .find((r) => r.condition.urlFilter === "|https://edge1.baidupcs.com/file/batch_1?sig=1|");
+  assert.ok(firstRule);
+  assert.ok(
+    firstRule.action.responseHeaders?.some((h) => h.value.includes("file_1.bin"))
+  );
+
+  // 2. Simulate MV3 Service Worker restart (fresh runtime instance with empty in-memory state)
+  const runtimeAfterRestart = createBackgroundRuntime([baiduProvider]);
+  const postRestartRes = await runtimeAfterRestart.dnr.ensureResolvedHostRule({
+    resolvedUrl: "https://edge1.baidupcs.com/file/after_restart?sig=251",
+    requestHeaders: [{ header: "user-agent", operation: "set", value: "pan.baidu.com" }],
+    filename: "file_251.bin",
+    forceAttachment: true,
+    preferFrameDownload: true,
+    initiatorDomains: ["pan.baidu.com"],
+  });
+
+  // Must allocate a FREE ID (not 9001!) and preserve all 250 pre-restart rules
+  assert.ok(postRestartRes?.ruleId);
+  assert.equal(installedIds.includes(postRestartRes.ruleId), false);
+  assert.equal(state.getSessionRules().length, 251);
+  assert.ok(
+    state
+      .getSessionRules()
+      .some((r) => r.condition.urlFilter === "|https://edge1.baidupcs.com/file/batch_1?sig=1|")
+  );
+
+  // 3. Re-installing the exact same URL reuses its existing rule ID instead of leaking duplicates
+  const duplicateRes = await runtimeAfterRestart.dnr.ensureResolvedHostRule({
+    resolvedUrl: "https://edge1.baidupcs.com/file/after_restart?sig=251",
+    requestHeaders: [{ header: "user-agent", operation: "set", value: "pan.baidu.com" }],
+    filename: "file_251_renamed.bin",
+    forceAttachment: true,
+    preferFrameDownload: true,
+    initiatorDomains: ["pan.baidu.com"],
+  });
+  assert.equal(duplicateRes.ruleId, postRestartRes.ruleId);
+  assert.equal(state.getSessionRules().length, 251);
+
+  // 4. Expired pre-restart rules tracked in chrome.storage.session are pruned on next allocation
+  state.sessionStore.pandirectEphemeralRuleMeta[String(installedIds[0])].expiresAt =
+    Date.now() - 1000;
+  const runtimeThird = createBackgroundRuntime([baiduProvider]);
+  const recycledRes = await runtimeThird.dnr.ensureResolvedHostRule({
+    resolvedUrl: "https://edge1.baidupcs.com/file/recycled?sig=252",
+    requestHeaders: [{ header: "user-agent", operation: "set", value: "pan.baidu.com" }],
+    filename: "file_252.bin",
+    forceAttachment: true,
+    preferFrameDownload: true,
+    initiatorDomains: ["pan.baidu.com"],
+  });
+  assert.equal(recycledRes.ruleId, installedIds[0]);
+  assert.equal(state.getSessionRules().length, 251);
+});
+
+test("Localhost bridge is excluded from root/Community/Store manifests and disabled by default even in Dev", async () => {
+  // Root manifest.json loaded directly by developers MUST NOT inject localhost bridge by default
+  const rootManifest = JSON.parse(
+    fs.readFileSync(path.join(REPO_ROOT, "manifest.json"), "utf8")
+  );
+  assert.equal(
+    rootManifest.content_scripts.some((cs) =>
+      cs.matches.some((m) => m.includes("localhost") || m.includes("127.0.0.1"))
+    ),
+    false,
+    "Root manifest.json must not inject localhost bridge by default"
+  );
+
   const tempDist = fs.mkdtempSync(path.join(os.tmpdir(), "pandirect-sec-dist-"));
   try {
     for (const edition of ["store", "community"]) {
@@ -653,7 +745,7 @@ test("Localhost bridge is excluded from Community & Store builds and minimized i
     fs.rmSync(tempDist, { recursive: true, force: true });
   }
 
-  // Runtime edition gating: community/store reject localhost bridge messages; dev returns minimal status only
+  // Runtime edition gating: community/store AND default dev reject localhost bridge messages
   const { mockChrome } = createFullChromeMock({
     enabled: true,
     appKey: "secret-app-key-123",
@@ -685,9 +777,32 @@ test("Localhost bridge is excluded from Community & Store builds and minimized i
     /未授权/
   );
 
+  // Even in dev edition, localhost bridge MUST fail closed until devBridgeEnabled=true is explicitly set
   const devRuntime = createBackgroundRuntime([baiduProvider, quarkProvider], {
     edition: "dev",
   });
+  await assert.rejects(
+    () =>
+      devRuntime.handleMessage(
+        { type: "PANDIRECT_GET_STATUS" },
+        LOCALHOST_BRIDGE_SENDER
+      ),
+    /未授权/
+  );
+  await assert.rejects(
+    () =>
+      devRuntime.handleMessage(
+        {
+          type: "PANDIRECT_DOWNLOAD",
+          url: "https://dl-pc-zb.pds.quark.cn/download/demo.bin",
+        },
+        LOCALHOST_BRIDGE_SENDER
+      ),
+    /未授权/
+  );
+
+  // Once explicitly opted-in via devBridgeEnabled: true, dev bridge still exposes minimal status only
+  await devRuntime.storage.setCoreConfig({ devBridgeEnabled: true });
   const devBridgeStatus = await devRuntime.handleMessage(
     { type: "PANDIRECT_GET_STATUS" },
     LOCALHOST_BRIDGE_SENDER

@@ -21,6 +21,7 @@ export function createStorageManager(registry) {
         (stored.aria2Url || DEFAULT_CORE_CONFIG.aria2Url).trim() ||
         DEFAULT_CORE_CONFIG.aria2Url,
       aria2Secret: (stored.aria2Secret || "").trim(),
+      devBridgeEnabled: Boolean(stored.devBridgeEnabled),
     };
   }
 
@@ -41,6 +42,10 @@ export function createStorageManager(registry) {
         typeof partial.aria2Secret === "string"
           ? partial.aria2Secret.trim()
           : current.aria2Secret,
+      devBridgeEnabled:
+        typeof partial.devBridgeEnabled === "boolean"
+          ? partial.devBridgeEnabled
+          : current.devBridgeEnabled,
     };
 
     await chrome.storage.local.set(next);

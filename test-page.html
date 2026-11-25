@@ -50,8 +50,12 @@
   <body>
     <h1>PanDirect 网页桥接测试页</h1>
     <p>
-      请通过本地 HTTP 服务打开本页（例如 <code>python3 -m http.server 8787</code> 后访问
-      <code>http://localhost:8787/test-page.html</code>），测试你的前端网页如何检测并调用 PanDirect 扩展。
+      本页仅用于本地开发调试：<code>localhost</code> 桥接默认关闭，需先运行
+      <code>node scripts/build.mjs --sync-root --no-dist --with-dev-bridge</code>
+      并在扩展 Service Worker 控制台执行
+      <code>chrome.storage.local.set({ devBridgeEnabled: true })</code>
+      后重新加载扩展，再通过本地 HTTP 服务打开本页（例如 <code>python3 -m http.server 8787</code>
+      后访问 <code>http://localhost:8787/test-page.html</code>）。
     </p>
 
     <div class="box">
