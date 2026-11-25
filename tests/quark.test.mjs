@@ -180,7 +180,7 @@ test("Quark helpers normalize dir IDs, detect folders, and enforce strict downlo
   assert.equal(isAllowedQuarkDownloadUrl("javascript:alert(1)"), false);
 });
 
-test("Quark DNR rules inject client UA for file/download and CDN without blocking pan.quark.cn iframe downloads", () => {
+test("Quark DNR rules inject client UA for file/download and CDN without disrupting pan.quark.cn web uploads or previews", () => {
   const rules = quarkProvider.getDnrRules(
     { userAgent: DEFAULT_QUARK_USER_AGENT },
     {
@@ -207,7 +207,12 @@ test("Quark DNR rules inject client UA for file/download and CDN without blockin
 
   const pdsCdnRule = rules.find((r) => r.condition.urlFilter === "||pds.quark.cn/");
   assert.ok(pdsCdnRule);
-  assert.equal(pdsCdnRule.condition.excludedInitiatorDomains, undefined);
+  assert.deepEqual(pdsCdnRule.condition.excludedInitiatorDomains, [
+    "pan.quark.cn",
+    "drive.quark.cn",
+  ]);
+  assert.deepEqual(pdsCdnRule.condition.requestMethods, ["get", "head"]);
+  assert.equal(pdsCdnRule.condition.resourceTypes.includes("main_frame"), false);
   assert.ok(pdsCdnRule.condition.resourceTypes.includes("sub_frame"));
   assert.ok(
     pdsCdnRule.action.requestHeaders.some(
@@ -220,7 +225,12 @@ test("Quark DNR rules inject client UA for file/download and CDN without blockin
   );
   assert.ok(driveCdnRule);
   assert.deepEqual(driveCdnRule.condition.requestDomains, ["drive.quark.cn"]);
-  assert.equal(driveCdnRule.condition.excludedInitiatorDomains, undefined);
+  assert.deepEqual(driveCdnRule.condition.excludedInitiatorDomains, [
+    "pan.quark.cn",
+    "drive.quark.cn",
+  ]);
+  assert.deepEqual(driveCdnRule.condition.requestMethods, ["get", "head"]);
+  assert.equal(driveCdnRule.condition.resourceTypes.includes("main_frame"), false);
   assert.ok(driveCdnRule.condition.resourceTypes.includes("sub_frame"));
 });
 

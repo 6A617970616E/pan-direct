@@ -633,6 +633,7 @@ export const xunleiProvider = defineProvider({
       ? resourceTypes.filter((t) => t !== "main_frame")
       : ["sub_frame", "xmlhttprequest", "media", "other"];
     const excludedWebPages = ["pan.xunlei.com"];
+    const downloadMethods = ["get", "head"];
     const downloadHeaders = buildXunleiDownloadRequestHeaders(config.userAgent);
     const effectiveExtId =
       extensionId ||
@@ -673,6 +674,8 @@ export const xunleiProvider = defineProvider({
         },
       },
       // Priority 1: inject download UA + Referer on dedicated Xunlei download hosts
+      // (exclude pan.xunlei.com & non-GET/HEAD so web uploads/previews are untouched;
+      // hidden iframe downloads use exact-URL priority-2 session rules instead).
       {
         id: ruleIdBase + 2,
         priority: 1,
@@ -682,6 +685,8 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: "||sdpan.cn/",
+          excludedInitiatorDomains: excludedWebPages,
+          requestMethods: downloadMethods,
           resourceTypes: nonMainFrameResourceTypes,
         },
       },
@@ -694,6 +699,8 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: ".xunlei.com/download/",
+          excludedInitiatorDomains: excludedWebPages,
+          requestMethods: downloadMethods,
           resourceTypes: nonMainFrameResourceTypes,
         },
       },
@@ -707,6 +714,7 @@ export const xunleiProvider = defineProvider({
         condition: {
           urlFilter: "||sandai.net/",
           ...sharedCdnScope,
+          requestMethods: downloadMethods,
           resourceTypes: apiResourceTypes,
         },
       },
@@ -720,6 +728,7 @@ export const xunleiProvider = defineProvider({
         condition: {
           urlFilter: "||xycdn.com/",
           ...sharedCdnScope,
+          requestMethods: downloadMethods,
           resourceTypes: apiResourceTypes,
         },
       },
@@ -733,6 +742,7 @@ export const xunleiProvider = defineProvider({
         condition: {
           urlFilter: "||88cdn.com/",
           ...sharedCdnScope,
+          requestMethods: downloadMethods,
           resourceTypes: apiResourceTypes,
         },
       },
@@ -746,6 +756,7 @@ export const xunleiProvider = defineProvider({
         condition: {
           urlFilter: "||xlpan.com/",
           ...sharedCdnScope,
+          requestMethods: downloadMethods,
           resourceTypes: apiResourceTypes,
         },
       },
@@ -759,6 +770,7 @@ export const xunleiProvider = defineProvider({
         condition: {
           urlFilter: "||onethingpcs.com/",
           ...sharedCdnScope,
+          requestMethods: downloadMethods,
           resourceTypes: apiResourceTypes,
         },
       },
@@ -772,6 +784,7 @@ export const xunleiProvider = defineProvider({
         condition: {
           urlFilter: "||p2cdn.com/",
           ...sharedCdnScope,
+          requestMethods: downloadMethods,
           resourceTypes: apiResourceTypes,
         },
       },

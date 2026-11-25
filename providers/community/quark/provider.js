@@ -548,7 +548,11 @@ export const quarkProvider = defineProvider({
 
   getDnrRules(config, { ruleIdBase, resourceTypes }) {
     const apiResourceTypes = ["xmlhttprequest", "other"];
+    const nonMainFrameResourceTypes = Array.isArray(resourceTypes)
+      ? resourceTypes.filter((t) => t !== "main_frame")
+      : ["sub_frame", "xmlhttprequest", "media", "other"];
     const excludedWebPages = ["pan.quark.cn", "drive.quark.cn"];
+    const downloadMethods = ["get", "head"];
 
     return [
       // Priority 2: inject Quark desktop client UA on file/download to bypass web code=23018
@@ -590,7 +594,9 @@ export const quarkProvider = defineProvider({
           resourceTypes: apiResourceTypes,
         },
       },
-      // Priority 1: inject desktop UA + Referer on Quark download CDN nodes (including hidden iframe)
+      // Priority 1: inject desktop UA + Referer on Quark download CDN nodes for extension/browser
+      // downloads without touching Quark web page uploads or previews (hidden iframe downloads
+      // use exact-URL priority-2 session rules instead).
       {
         id: ruleIdBase + 3,
         priority: 1,
@@ -600,7 +606,9 @@ export const quarkProvider = defineProvider({
         },
         condition: {
           urlFilter: "||pds.quark.cn/",
-          resourceTypes,
+          excludedInitiatorDomains: excludedWebPages,
+          requestMethods: downloadMethods,
+          resourceTypes: nonMainFrameResourceTypes,
         },
       },
       // Priority 1: also cover *.drive.quark.cn regional download nodes (e.g. dl-pc-sz.drive.quark.cn)
@@ -614,7 +622,9 @@ export const quarkProvider = defineProvider({
         condition: {
           urlFilter: ".drive.quark.cn/",
           requestDomains: ["drive.quark.cn"],
-          resourceTypes,
+          excludedInitiatorDomains: excludedWebPages,
+          requestMethods: downloadMethods,
+          resourceTypes: nonMainFrameResourceTypes,
         },
       },
       // Priority 1: supply Referer when checking account/info from extension SW

@@ -328,6 +328,7 @@ export function createDnrManager(registry, storage) {
 
         const condition = {
           urlFilter,
+          requestMethods: ["get", "head"],
           resourceTypes: preferFrameDownload
             ? ["sub_frame"]
             : ["other", "sub_frame", "xmlhttprequest"],

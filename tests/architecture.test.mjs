@@ -201,7 +201,7 @@ test("Baidu provider enforces strict download domain allowlist", () => {
   assert.equal(isAllowedBaiduDownloadUrl("javascript:alert(1)"), false);
 });
 
-test("Baidu DNR rules match full pcs/baidupcs/pcsdata hosts without hardcoding /rest/2.0/pcs/file", () => {
+test("Baidu DNR rules match pcs/baidupcs/pcsdata downloads without breaking pan.baidu.com web uploads", () => {
   const rules = baiduProvider.getDnrRules(
     { userAgent: "pan.baidu.com" },
     {
@@ -214,6 +214,14 @@ test("Baidu DNR rules match full pcs/baidupcs/pcsdata hosts without hardcoding /
     rules.map((r) => r.condition.urlFilter),
     ["||pcs.baidu.com/", "||baidupcs.com/", "||pcsdata.baidu.com/"]
   );
+  for (const rule of rules) {
+    assert.deepEqual(rule.condition.excludedInitiatorDomains, [
+      "pan.baidu.com",
+      "yun.baidu.com",
+    ]);
+    assert.deepEqual(rule.condition.requestMethods, ["get", "head"]);
+    assert.equal(rule.condition.resourceTypes.includes("main_frame"), false);
+  }
   const uaHeader = rules[0].action.requestHeaders.find(
     (h) => h.header === "user-agent"
   );

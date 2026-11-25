@@ -220,6 +220,14 @@ export const baiduProvider = defineProvider({
       type: "modifyHeaders",
       requestHeaders: buildBaiduModifyRequestHeaders(config.userAgent),
     };
+    const nonMainFrameResourceTypes = Array.isArray(resourceTypes)
+      ? resourceTypes.filter((t) => t !== "main_frame")
+      : ["sub_frame", "xmlhttprequest", "media", "other"];
+    // Never rewrite Baidu web page's own XHR/media requests (such as POST /pcs/superfile2
+    // cross-origin uploads which require Origin/Referer and browser User-Agent).
+    // Hidden iframe downloads from pan.baidu.com use exact-URL priority-2 session rules instead.
+    const excludedWebPages = ["pan.baidu.com", "yun.baidu.com"];
+    const downloadMethods = ["get", "head"];
 
     // Match full host patterns (do NOT hardcode /rest/2.0/pcs/file; dlink uses /file/...)
     return [
@@ -229,7 +237,9 @@ export const baiduProvider = defineProvider({
         action: modifyAction,
         condition: {
           urlFilter: "||pcs.baidu.com/",
-          resourceTypes,
+          excludedInitiatorDomains: excludedWebPages,
+          requestMethods: downloadMethods,
+          resourceTypes: nonMainFrameResourceTypes,
         },
       },
       {
@@ -238,7 +248,9 @@ export const baiduProvider = defineProvider({
         action: modifyAction,
         condition: {
           urlFilter: "||baidupcs.com/",
-          resourceTypes,
+          excludedInitiatorDomains: excludedWebPages,
+          requestMethods: downloadMethods,
+          resourceTypes: nonMainFrameResourceTypes,
         },
       },
       {
@@ -247,7 +259,9 @@ export const baiduProvider = defineProvider({
         action: modifyAction,
         condition: {
           urlFilter: "||pcsdata.baidu.com/",
-          resourceTypes,
+          excludedInitiatorDomains: excludedWebPages,
+          requestMethods: downloadMethods,
+          resourceTypes: nonMainFrameResourceTypes,
         },
       },
     ];

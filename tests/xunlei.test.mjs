@@ -342,6 +342,8 @@ test("Xunlei DNR rules use 3000+ IDs, preserve pan.xunlei.com browsing, and scop
 
   const sdpanRule = xunleiRules.find((r) => r.condition.urlFilter === "||sdpan.cn/");
   assert.ok(sdpanRule);
+  assert.deepEqual(sdpanRule.condition.excludedInitiatorDomains, ["pan.xunlei.com"]);
+  assert.deepEqual(sdpanRule.condition.requestMethods, ["get", "head"]);
   assert.equal(sdpanRule.condition.resourceTypes.includes("main_frame"), false);
   const uaHeader = sdpanRule.action.requestHeaders.find((h) => h.header === "user-agent");
   assert.equal(uaHeader.value, DEFAULT_XUNLEI_USER_AGENT);
@@ -357,6 +359,7 @@ test("Xunlei DNR rules use 3000+ IDs, preserve pan.xunlei.com browsing, and scop
     const rule = xunleiRules.find((r) => r.condition.urlFilter === sharedFilter);
     assert.ok(rule, `Expected rule for ${sharedFilter}`);
     assert.deepEqual(rule.condition.initiatorDomains, ["test-ext-id"]);
+    assert.deepEqual(rule.condition.requestMethods, ["get", "head"]);
     assert.deepEqual(rule.condition.resourceTypes, ["xmlhttprequest", "other"]);
   }
 });
