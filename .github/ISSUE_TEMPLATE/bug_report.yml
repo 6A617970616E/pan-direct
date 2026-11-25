@@ -1,0 +1,78 @@
+name: 问题反馈 / Bug Report
+description: 反馈下载失败、上传冲突、页面按钮未显示或兼容问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请确认**不要粘贴**任何敏感凭据（如 `AppKey`、`access_token`、`Cookie`、`aria2Secret` 等）。
+
+  - type: input
+    id: version
+    attributes:
+      label: PanDirect 版本与发行版
+      description: 可在扩展弹窗左下角查看（从插件「问题反馈」打开时会自动预填）
+      placeholder: 例如：v0.4.0 (Store) 或 v0.4.0 (Community)
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: 浏览器与操作系统
+      placeholder: 例如：Chrome 131 / macOS
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: 涉及网盘
+      options:
+        - 百度网盘
+        - 夸克网盘
+        - 迅雷云盘
+        - 通用 / 扩展本身
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scene
+    attributes:
+      label: 出现问题的场景
+      options:
+        - 单文件浏览器直下
+        - 多选文件批量下载
+        - 整文件夹流式下载器
+        - 推送到 Aria2 / Motrix
+        - 网页上传 / 预览 / 正常浏览异常
+        - 三点菜单 / 悬浮抽屉未显示
+        - 授权 / 登录态检测
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: mode
+    attributes:
+      label: 当前下载模式
+      placeholder: 浏览器原生直下 / 推送 Aria2
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤与现象
+      description: 请简述操作步骤、页面报错文案或截图（可直接在下方粘贴截图）
+      placeholder: |
+        1. 打开网盘页面...
+        2. 点击...
+        3. 实际现象：...
+        4. 期望结果：...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 补充信息（可选）
+      description: 如 DevTools Console / Network 状态码（请脱敏后再粘贴）

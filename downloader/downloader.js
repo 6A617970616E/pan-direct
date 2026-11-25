@@ -20,6 +20,10 @@ const overallStatusText = document.getElementById("overallStatusText");
 const overallSpeedText = document.getElementById("overallSpeedText");
 const overallBar = document.getElementById("overallBar");
 const fileListEl = document.getElementById("fileList");
+const feedbackLink = document.getElementById("feedbackLink");
+
+const FEEDBACK_ISSUES_BASE_URL =
+  "https://github.com/6A617970616E/pan-direct/issues/new";
 
 const initialDisplayLabel =
   targetFolderLabel || (targetFolderPath === "0" ? "/" : targetFolderPath);
@@ -35,12 +39,82 @@ let stopRequested = false;
 let activeAbortControllers = new Set();
 let lastChosenDirHandle = null;
 let lastRunMode = preferredMode;
+let currentProviderName = "";
 
 // Speed tracking
 let bytesCompletedBeforeActive = 0;
 let speedSampleBytes = 0;
 let speedSampleTime = Date.now();
 let currentSpeedBps = 0;
+
+function detectBrowserSummary() {
+  const ua =
+    typeof navigator !== "undefined" && typeof navigator.userAgent === "string"
+      ? navigator.userAgent
+      : "";
+  if (!ua) return "";
+
+  let browser = "Browser";
+  const edgeMatch = ua.match(/Edg\/([\d.]+)/);
+  const chromeMatch = ua.match(/Chrome\/([\d.]+)/);
+  const firefoxMatch = ua.match(/Firefox\/([\d.]+)/);
+  if (edgeMatch) browser = `Edge ${edgeMatch[1].split(".")[0]}`;
+  else if (chromeMatch) browser = `Chrome ${chromeMatch[1].split(".")[0]}`;
+  else if (firefoxMatch) browser = `Firefox ${firefoxMatch[1].split(".")[0]}`;
+
+  let os = "";
+  if (/Windows/i.test(ua)) os = "Windows";
+  else if (/Macintosh|Mac OS X/i.test(ua)) os = "macOS";
+  else if (/CrOS/i.test(ua)) os = "ChromeOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+
+  return os ? `${browser} / ${os}` : browser;
+}
+
+function updateFeedbackLink({
+  providerName = currentProviderName,
+  mode = lastRunMode,
+} = {}) {
+  if (!feedbackLink) return;
+  const query = new URLSearchParams();
+  query.set("template", "bug_report.yml");
+
+  const manifest =
+    typeof chrome !== "undefined" &&
+    typeof chrome.runtime?.getManifest === "function"
+      ? chrome.runtime.getManifest()
+      : null;
+  if (manifest?.version) {
+    const editionHint =
+      typeof manifest.name === "string" && manifest.name.includes("Community")
+        ? "(Community)"
+        : "";
+    query.set(
+      "version",
+      [`v${manifest.version}`, editionHint].filter(Boolean).join(" ")
+    );
+  }
+
+  const browserText = detectBrowserSummary();
+  if (browserText) {
+    query.set("browser", browserText);
+  }
+
+  if (providerName) {
+    query.set("provider", providerName);
+  }
+
+  query.set("scene", "整文件夹流式下载器");
+  if (mode === "aria2") {
+    query.set("mode", "推送 Aria2");
+  } else if (mode === "browser") {
+    query.set("mode", "浏览器原生直下");
+  }
+
+  feedbackLink.href = `${FEEDBACK_ISSUES_BASE_URL}?${query.toString()}`;
+}
+
+updateFeedbackLink();
 
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return "0 B";
@@ -224,8 +298,12 @@ async function scanFolder() {
       return;
     }
 
-    if (res.providerName && providerPill) {
-      providerPill.textContent = res.providerName;
+    if (res.providerName) {
+      currentProviderName = res.providerName;
+      if (providerPill) {
+        providerPill.textContent = res.providerName;
+      }
+      updateFeedbackLink({ providerName: currentProviderName });
     }
 
     if (res.displayPath && !targetFolderLabel) {
@@ -437,6 +515,7 @@ async function runQueue(targetTasks, mode, dirHandle) {
   isRunning = true;
   stopRequested = false;
   lastRunMode = mode;
+  updateFeedbackLink({ mode });
   bytesCompletedBeforeActive = tasks.reduce((s, t) => s + (t.loaded || 0), 0);
   speedSampleBytes = bytesCompletedBeforeActive;
   speedSampleTime = Date.now();

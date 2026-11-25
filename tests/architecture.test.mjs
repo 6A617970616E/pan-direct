@@ -13,6 +13,11 @@ import {
   normalizeDirectoryPath,
 } from "../core/utils.js";
 import { buildAria2HeaderOptions } from "../core/aria2.js";
+import {
+  FEEDBACK_ISSUES_BASE_URL,
+  detectBrowserSummary,
+  buildFeedbackIssueUrl,
+} from "../core/feedback.js";
 import { createBackgroundRuntime } from "../core/background-router.js";
 import {
   baiduProvider,
@@ -1293,4 +1298,106 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
   // Clean up timers cleanly
   storageListeners[0]({ enabled: { oldValue: true, newValue: false } }, "local");
 });
+
+test("core/feedback builds non-sensitive GitHub Issue prefill URLs and keeps Store build free of community references", () => {
+  assert.equal(
+    detectBrowserSummary(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Safari/537.36"
+    ),
+    "Chrome 131 / macOS"
+  );
+  assert.equal(
+    detectBrowserSummary(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.2903.51"
+    ),
+    "Edge 131 / Windows"
+  );
+  assert.equal(
+    detectBrowserSummary(
+      "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    ),
+    "Chrome 130 / ChromeOS"
+  );
+  assert.equal(detectBrowserSummary(""), "");
+
+  const issueUrl = buildFeedbackIssueUrl({
+    version: "0.4.0",
+    editionLabel: "Store",
+    downloadMode: "browser",
+    providerName: "百度网盘",
+    scene: "整文件夹流式下载器",
+    userAgent:
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+    // Extra sensitive fields must never appear in the generated URL
+    appKey: "SECRET_APP_KEY",
+    accessToken: "SECRET_TOKEN",
+    cookie: "BDUSS=SECRET",
+    aria2Secret: "SECRET_RPC",
+    aria2Url: "http://192.168.1.9:6800/jsonrpc",
+    path: "/private/taxes.pdf",
+  });
+
+  const parsed = new URL(issueUrl);
+  assert.equal(`${parsed.origin}${parsed.pathname}`, FEEDBACK_ISSUES_BASE_URL);
+  assert.equal(parsed.searchParams.get("template"), "bug_report.yml");
+  assert.equal(parsed.searchParams.get("version"), "v0.4.0 (Store)");
+  assert.equal(parsed.searchParams.get("browser"), "Chrome 131 / macOS");
+  assert.equal(parsed.searchParams.get("provider"), "百度网盘");
+  assert.equal(parsed.searchParams.get("scene"), "整文件夹流式下载器");
+  assert.equal(parsed.searchParams.get("mode"), "浏览器原生直下");
+  for (const forbidden of [
+    "SECRET_APP_KEY",
+    "SECRET_TOKEN",
+    "BDUSS",
+    "SECRET_RPC",
+    "192.168.1.9",
+    "taxes.pdf",
+  ]) {
+    assert.equal(issueUrl.includes(forbidden), false);
+  }
+
+  // Store-build purity: core/feedback.js must not mention community provider names
+  const feedbackSrc = fs.readFileSync(
+    path.join(REPO_ROOT, "core", "feedback.js"),
+    "utf8"
+  );
+  for (const communityWord of ["quark", "xunlei", "夸克", "迅雷"]) {
+    assert.equal(feedbackSrc.toLowerCase().includes(communityWord), false);
+  }
+});
+
+test("GitHub issue templates and UI feedback links exist in popup and folder downloader", () => {
+  const bugTemplatePath = path.join(
+    REPO_ROOT,
+    ".github",
+    "ISSUE_TEMPLATE",
+    "bug_report.yml"
+  );
+  const configPath = path.join(
+    REPO_ROOT,
+    ".github",
+    "ISSUE_TEMPLATE",
+    "config.yml"
+  );
+  assert.equal(fs.existsSync(bugTemplatePath), true);
+  assert.equal(fs.existsSync(configPath), true);
+
+  const bugTemplate = fs.readFileSync(bugTemplatePath, "utf8");
+  for (const expected of ["百度网盘", "夸克网盘", "迅雷云盘", "id: version", "id: browser"]) {
+    assert.ok(bugTemplate.includes(expected), `bug_report.yml missing: ${expected}`);
+  }
+
+  for (const relHtml of ["popup/popup.html", "downloader/downloader.html"]) {
+    const html = fs.readFileSync(path.join(REPO_ROOT, relHtml), "utf8");
+    assert.ok(html.includes('id="feedbackLink"'), `${relHtml} missing #feedbackLink`);
+    assert.ok(
+      html.includes(
+        "https://github.com/6A617970616E/pan-direct/issues/new?template=bug_report.yml"
+      ),
+      `${relHtml} missing GitHub Issue feedback URL`
+    );
+    assert.ok(html.includes('rel="noopener noreferrer"'), `${relHtml} missing rel guard`);
+  }
+});
+
 

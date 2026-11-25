@@ -436,8 +436,10 @@ button:disabled {
 
 .footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--muted);
   padding: 2px 2px 0;

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 隐私政策 / Privacy Policy
+    url: https://github.com/6A617970616E/pan-direct/blob/main/PRIVACY.md
+    about: 查看 PanDirect 本地运行、零后端、无数据收集的隐私说明

@@ -1,4 +1,5 @@
 import { popupCardRenderers } from "../providers/popup-index.js";
+import { buildFeedbackIssueUrl } from "../core/feedback.js";
 
 const enabledToggle = document.getElementById("enabledToggle");
 const statusDot = document.getElementById("statusDot");
@@ -28,6 +29,7 @@ const versionText = document.getElementById("versionText");
 const editionTag = document.getElementById("editionTag");
 const providersHint = document.getElementById("providersHint");
 const extraProviderCards = document.getElementById("extraProviderCards");
+const feedbackLink = document.getElementById("feedbackLink");
 
 function sendMessage(msg) {
   return chrome.runtime.sendMessage(msg);
@@ -36,6 +38,19 @@ function sendMessage(msg) {
 function setFeedback(el, text, type) {
   el.textContent = text;
   el.className = "feedback" + (type ? ` ${type}` : "");
+}
+
+function updateFeedbackLink({ version, editionLabel, downloadMode } = {}) {
+  if (!feedbackLink) return;
+  const manifestVersion =
+    typeof chrome !== "undefined" && typeof chrome.runtime?.getManifest === "function"
+      ? chrome.runtime.getManifest()?.version || ""
+      : "";
+  feedbackLink.href = buildFeedbackIssueUrl({
+    version: version || manifestVersion,
+    editionLabel,
+    downloadMode,
+  });
 }
 
 function formatRemainingDays(expiresAt) {
@@ -59,6 +74,12 @@ function renderStatus(res) {
     editionTag.textContent = res.editionLabel || res.edition;
     editionTag.className = `edition-tag ${res.edition}`;
   }
+
+  updateFeedbackLink({
+    version: res.version,
+    editionLabel: res.editionLabel || res.edition,
+    downloadMode: res.downloadMode,
+  });
 
   if (providersHint && Array.isArray(res.providers) && res.providers.length > 0) {
     const names = res.providers
@@ -299,4 +320,5 @@ downloadBtn.addEventListener("click", async () => {
   }
 });
 
+updateFeedbackLink();
 refreshStatus();
