@@ -46,7 +46,7 @@ PanDirect 是一款纯本地运行、零后端、开源透明的轻量网盘直�
 
 核心功能：
 • 官方 OAuth 显式授权（BYOK 自有 AppKey）：使用你自己在百度网盘开放平台创建的 AppKey，所有授权与 Token 仅保存在本机浏览器 chrome.storage.local，不经过任何第三方服务器。
-• 单文件浏览器原生直下：在 pan.baidu.com 页面右侧呼出「PanDirect 直下」悬浮抽屉，自动通过 Manifest V3 declarativeNetRequest 注入开放平台文档要求的下载请求头，一键启动浏览器原生下载。
+• 单文件浏览器原生直下：在 pan.baidu.com 文件行右侧「•••」下拉菜单中直接点击「直连下载」，或通过右下角「PanDirect 直下」悬浮抽屉浏览并一键启动浏览器原生下载（通过 Manifest V3 declarativeNetRequest 自动注入开放平台文档要求的下载请求头）。
 • 整文件夹流式写盘（不打 ZIP、不爆内存）：通过浏览器原生 File System Access API 选定本地目录后，自动递归扫描并重建完整嵌套子目录结构，支持 1~3 并发、跳过同名同大小文件、随时停止与失败重试。
 • 本地 Aria2 / Motrix 批量推送：可选将单文件或整文件夹（保留相对子目录路径）直接推送至本机 Aria2 / Motrix RPC 队列。
 
@@ -62,7 +62,7 @@ PanDirect is a lightweight, local-only, zero-backend, open-source (MIT) Manifest
 
 Key Features:
 • Official Explicit OAuth 2.0 (Bring Your Own AppKey): Uses your own Baidu Netdisk Open Platform AppKey. Your AppKey and OAuth access token stay strictly in local browser storage (chrome.storage.local) and are never sent to developer servers.
-• Native Single-File Browser Download: Open the "PanDirect" floating drawer on pan.baidu.com to browse files and trigger native browser downloads with required OpenAPI download headers applied automatically via Manifest V3 declarativeNetRequest.
+• Native Single-File Browser Download: Click "直连下载" inside the file row's overflow (•••) menu or open the bottom-right "PanDirect" floating drawer on pan.baidu.com to trigger native browser downloads with required OpenAPI download headers applied automatically via Manifest V3 declarativeNetRequest.
 • Streaming Folder Download (No ZIP, Low Memory): Uses the browser's File System Access API to write entire nested folders directly to a chosen local directory with configurable concurrency (1–3), skip-existing support, stop, and retry.
 • Optional Local Aria2 / Motrix Push: Push single files or full folder trees (preserving subdirectory paths) directly to your local Aria2 / Motrix JSON-RPC daemon.
 
@@ -134,7 +134,8 @@ How to inspect & test:
 2. Full end-to-end download flow (requires a Baidu Netdisk account + free personal Baidu Open Platform AppKey from https://pan.baidu.com/union/):
    - Paste an AppKey into the popup and click "百度授权" to open Baidu's official OAuth 2.0 oob consent popup (openapi.baidu.com).
    - After user confirmation, the popup closes automatically and stores the OAuth access_token locally in chrome.storage.local only.
-   - Visit https://pan.baidu.com/disk/main and click the bottom-right "PanDirect 直下" floating button to browse files, download a single file, or open the folder streaming downloader tab.
+   - Visit https://pan.baidu.com/disk/main and either click "直连下载" in any file row's overflow (•••) menu or click the bottom-right "PanDirect 直下" floating button to browse files, download a single file, or open the folder streaming downloader tab.
+   - Toggling PanDirect OFF in the popup immediately hides the floating button, drawer, and injected menu item.
 3. No cookies permission is requested in this Store build, and no data is ever transmitted to any developer server. Source code and privacy policy are public at https://github.com/6A617970616E/pan-direct.
 ```
 
@@ -142,12 +143,13 @@ How to inspect & test:
 
 ## 5. 上架视觉素材清单
 
-| 素材 | 尺寸要求 | 状态 |
+| 素材 | 尺寸与格式要求 | 状态 |
 | --- | --- | --- |
-| 扩展图标（Chrome / 包内） | `16×16` / `48×48` / `128×128` RGBA PNG | ✅ 已就绪：`icons/icon16.png`、`icons/icon48.png`、`icons/icon128.png`（矢量源稿 `assets/store/icon.svg`） |
-| Edge Add-ons 商店图标 | `300×300` RGBA PNG | ✅ 已就绪：`assets/store/edge-icon-300.png` |
-| Chrome Web Store 小型宣传图 | `440×280` RGB PNG（无透明通道） | ✅ 已就绪：`assets/store/promo-440x280.png` |
-| 商店功能截图（至少 1 张，建议 3 张） | `1280×800` PNG（无透明通道） | ⬜ 上架前实机截取：① 扩展弹窗设置页 ② 百度网盘页悬浮抽屉 ③ 整文件夹流式下载进度页（注意遮挡个人文件名 / AppKey） |
+| 扩展图标（Chrome / 包内） | `16×16` / `48×48` / `128×128` 8-bit RGBA PNG | ✅ 已就绪：`icons/icon16.png`、`icons/icon48.png`、`icons/icon128.png`（矢量源稿 `assets/store/icon.svg`） |
+| Edge Add-ons 商店图标 | `300×300` 8-bit RGBA PNG | ✅ 已就绪：`assets/store/edge-icon-300.png` |
+| Chrome Web Store / Edge 小型宣传图 | `440×280` 8-bit RGB PNG（无透明通道） | ✅ 已就绪：`assets/store/promo-440x280.png` |
+| Chrome Web Store 顶部大图（可选推荐） | `1400×560` 8-bit RGB PNG（无透明通道） | ✅ 已就绪：`assets/store/marquee-1400x560.png` |
+| 商店功能截图（3 张） | `1280×800` 8-bit RGB PNG（无透明通道） | ✅ 已就绪：<br>① `assets/store/screenshot-1-drawer.png`（网盘 `•••` 菜单「直连下载」与悬浮抽屉）<br>② `assets/store/screenshot-2-folder-downloader.png`（整文件夹流式写盘下载器）<br>③ `assets/store/screenshot-3-popup-auth.png`（商店版扩展弹窗与安全特性） |
 
 ---
 
@@ -155,9 +157,9 @@ How to inspect & test:
 
 1. **优先提审 Microsoft Edge Add-ons**：
    - 登录 [Microsoft Partner Center](https://partner.microsoft.com/dashboard/microsoftedge/overview)（免费注册，国内直连）；
-   - 新建扩展 → 上传 `dist/store.zip` → 按第 2~4 节填写属性、隐私政策 URL 与测试说明 → 提交审核（通常 3~7 天）。
+   - 新建扩展 → 上传 `dist/store.zip` → 上传 `edge-icon-300.png`、`promo-440x280.png` 与 3 张 `1280×800` 截图 → 按第 2~4 节填写属性、隐私政策 URL 与测试说明 → 提交审核（通常 3~7 天）。
 2. **同步提审 Chrome Web Store**：
    - 登录 [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)（一次性 \$5 注册费）；
-   - Add new item → 上传同一个 `dist/store.zip` → 按第 2~4 节填写 Store listing、Privacy practices、Test instructions → 提交审核（新账号首次通常 3~7 天）。
+   - Add new item → 上传同一个 `dist/store.zip` → 上传 `promo-440x280.png`、`marquee-1400x560.png` 与 3 张 `1280×800` 截图 → 按第 2~4 节填写 Store listing、Privacy practices、Test instructions → 提交审核（新账号首次通常 3~7 天）。
 3. **社区版发布（GitHub Releases）**：
-   - 运行 `npm run build` 同时产出 `dist/store.zip` 与 `dist/community.zip`，在 GitHub Releases 同时附上两份压缩包及说明（商店版零 `cookies` 权限，社区版含夸克网盘）。
+   - 运行 `npm run build` 同时产出 `dist/store.zip` 与 `dist/community.zip`，在 GitHub Releases 同时附上两份压缩包及说明（商店版零 `cookies` 权限仅含百度官方 OpenAPI，社区版额外包含夸克网盘与迅雷云盘）。
