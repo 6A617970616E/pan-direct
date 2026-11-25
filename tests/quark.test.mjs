@@ -23,10 +23,26 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "..");
 
+const POPUP_SENDER = {
+  id: "test-ext-id",
+  url: "chrome-extension://test-ext-id/popup/popup.html",
+};
+
+const DOWNLOADER_SENDER = {
+  id: "test-ext-id",
+  url: "chrome-extension://test-ext-id/downloader/downloader.html",
+};
+
+const QUARK_TAB_SENDER = {
+  id: "test-ext-id",
+  tab: { url: "https://pan.quark.cn/list#/list/all" },
+};
+
 function createMockChrome(initialLocal = {}, mockCookies = []) {
   const localStore = { ...initialLocal };
   const sessionStore = {};
   let dynamicRules = [];
+  let sessionRules = [];
   const createdTabs = [];
   const cookieChangeListeners = new Set();
 
@@ -89,6 +105,12 @@ function createMockChrome(initialLocal = {}, mockCookies = []) {
         dynamicRules = dynamicRules.filter((r) => !removeSet.has(r.id));
         dynamicRules.push(...addRules);
       },
+      getSessionRules: async () => [...sessionRules],
+      updateSessionRules: async ({ removeRuleIds = [], addRules = [] }) => {
+        const removeSet = new Set(removeRuleIds);
+        sessionRules = sessionRules.filter((r) => !removeSet.has(r.id));
+        sessionRules.push(...addRules);
+      },
     },
     action: {
       setBadgeText: async () => {},
@@ -115,6 +137,7 @@ function createMockChrome(initialLocal = {}, mockCookies = []) {
       localStore,
       createdTabs,
       getDynamicRules: () => dynamicRules,
+      getSessionRules: () => sessionRules,
     },
   };
 }
@@ -137,9 +160,18 @@ test("Quark helpers normalize dir IDs, detect folders, and enforce strict downlo
     true
   );
   assert.equal(
+    isAllowedQuarkDownloadUrl("https://dl-pc-sz.drive.quark.cn/download/demo.bin"),
+    true
+  );
+  assert.equal(
     isAllowedQuarkDownloadUrl("https://cdn.uc.cn/file/demo.zip"),
     true
   );
+  // Web / API hosts on quark.cn and uc.cn must be rejected as download targets
+  assert.equal(isAllowedQuarkDownloadUrl("https://pan.quark.cn/account/info"), false);
+  assert.equal(isAllowedQuarkDownloadUrl("https://drive-pc.quark.cn/1/clouddrive/file/sort"), false);
+  assert.equal(isAllowedQuarkDownloadUrl("https://quark.cn/"), false);
+  assert.equal(isAllowedQuarkDownloadUrl("https://www.uc.cn/"), false);
   assert.equal(
     isAllowedQuarkDownloadUrl("https://pds.quark.cn.evil.com/demo.zip"),
     false
@@ -215,20 +247,26 @@ test("Quark session check updates status on active login and opens pan.quark.cn 
   try {
     const runtime = createBackgroundRuntime([baiduProvider, quarkProvider]);
 
-    const loggedInRes = await runtime.handleMessage({
-      type: "PANDIRECT_PROVIDER_AUTH_START",
-      provider: "quark",
-    });
+    const loggedInRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_PROVIDER_AUTH_START",
+        provider: "quark",
+      },
+      POPUP_SENDER
+    );
     assert.equal(loggedInRes.ok, true);
     assert.equal(loggedInRes.authResult.loggedIn, true);
     assert.equal(loggedInRes.authResult.nickname, "夸克测试用户");
     assert.equal(state.createdTabs.length, 0);
 
     mockLoggedIn = false;
-    const loggedOutRes = await runtime.handleMessage({
-      type: "PANDIRECT_PROVIDER_AUTH_START",
-      provider: "quark",
-    });
+    const loggedOutRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_PROVIDER_AUTH_START",
+        provider: "quark",
+      },
+      POPUP_SENDER
+    );
     assert.equal(loggedOutRes.ok, true);
     assert.equal(loggedOutRes.authResult.loggedIn, false);
     assert.equal(loggedOutRes.authResult.openedLoginTab, true);
@@ -324,11 +362,14 @@ test("Quark listFiles and listFolderRecursive traverse ID-tree folders via BFS w
   try {
     const runtime = createBackgroundRuntime([baiduProvider, quarkProvider]);
 
-    const listRes = await runtime.handleMessage({
-      type: "PANDIRECT_LIST_FILES",
-      provider: "quark",
-      dir: "dir_movies",
-    });
+    const listRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_LIST_FILES",
+        provider: "quark",
+        dir: "dir_movies",
+      },
+      QUARK_TAB_SENDER
+    );
     assert.equal(listRes.ok, true);
     assert.equal(listRes.providerName, "夸克网盘");
     assert.equal(listRes.displayPath, "/电影合集");
@@ -336,11 +377,14 @@ test("Quark listFiles and listFolderRecursive traverse ID-tree folders via BFS w
     assert.equal(listRes.isRoot, false);
     assert.equal(listRes.files.length, 2);
 
-    const recRes = await runtime.handleMessage({
-      type: "PANDIRECT_LIST_FOLDER_RECURSIVE",
-      provider: "quark",
-      path: "dir_movies",
-    });
+    const recRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_LIST_FOLDER_RECURSIVE",
+        provider: "quark",
+        path: "dir_movies",
+      },
+      DOWNLOADER_SENDER
+    );
     assert.equal(recRes.ok, true);
     assert.equal(recRes.folderName, "电影合集");
     assert.equal(recRes.dirsScanned, 2);
@@ -445,13 +489,16 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     const runtime = createBackgroundRuntime([baiduProvider, quarkProvider]);
 
     // 1. Browser iframe download
-    const dlRes = await runtime.handleMessage({
-      type: "PANDIRECT_DOWNLOAD_ITEMS",
-      provider: "quark",
-      itemIds: ["fid_demo_1"],
-      mode: "browser",
-      preferFrameDownload: true,
-    });
+    const dlRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_DOWNLOAD_ITEMS",
+        provider: "quark",
+        itemIds: ["fid_demo_1"],
+        mode: "browser",
+        preferFrameDownload: true,
+      },
+      QUARK_TAB_SENDER
+    );
     assert.equal(dlRes.ok, true);
     assert.equal(dlRes.results[0].ok, true);
     assert.equal(preflightCredentials, "include");
@@ -464,10 +511,7 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
         provider: "quark",
         itemId: "fid_demo_1",
       },
-      {
-        id: "test-ext-id",
-        url: "chrome-extension://test-ext-id/downloader/downloader.html",
-      }
+      DOWNLOADER_SENDER
     );
     assert.equal(streamRes.ok, true);
     assert.equal(streamRes.credentials, "include");
@@ -484,12 +528,15 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     globalThis.chrome = cookieChrome;
     const autoRuntime = createBackgroundRuntime([baiduProvider, quarkProvider]);
 
-    const autoAriaRes = await autoRuntime.handleMessage({
-      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
-      provider: "quark",
-      itemId: "fid_demo_1",
-      relativePath: "Movies/movie.mkv",
-    });
+    const autoAriaRes = await autoRuntime.handleMessage(
+      {
+        type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+        provider: "quark",
+        itemId: "fid_demo_1",
+        relativePath: "Movies/movie.mkv",
+      },
+      DOWNLOADER_SENDER
+    );
     assert.equal(autoAriaRes.ok, true);
     assert.equal(autoAriaRes.gid, "gid_quark_01");
     const autoOpts = capturedAria2Body.params[1];
@@ -504,12 +551,15 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
 
     // 3b. Live __puus Set-Cookie rotation observed during POST /file/download overrides stale cookie jar value
     emitRotatedPuus = "fresh_rotated_puus_999";
-    const rotatedRes = await autoRuntime.handleMessage({
-      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
-      provider: "quark",
-      itemId: "fid_demo_1",
-      relativePath: "Movies/movie.mkv",
-    });
+    const rotatedRes = await autoRuntime.handleMessage(
+      {
+        type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+        provider: "quark",
+        itemId: "fid_demo_1",
+        relativePath: "Movies/movie.mkv",
+      },
+      DOWNLOADER_SENDER
+    );
     emitRotatedPuus = "";
     assert.equal(rotatedRes.ok, true);
     assert.deepEqual(capturedAria2Body.params[1].header, [
@@ -526,11 +576,14 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     });
     globalThis.chrome = flushChrome;
     const flushRuntime = createBackgroundRuntime([baiduProvider, quarkProvider]);
-    const flushAriaRes = await flushRuntime.handleMessage({
-      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
-      provider: "quark",
-      itemId: "fid_demo_1",
-    });
+    const flushAriaRes = await flushRuntime.handleMessage(
+      {
+        type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+        provider: "quark",
+        itemId: "fid_demo_1",
+      },
+      DOWNLOADER_SENDER
+    );
     assert.equal(flushAriaRes.ok, true);
     assert.equal(flushCalledCount, 1);
     assert.deepEqual(capturedAria2Body.params[1].header, [
@@ -539,24 +592,32 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
 
     // 4. Refuse auto-sending browser session cookies to non-local public Aria2 RPC URLs
     globalThis.chrome = cookieChrome;
-    await autoRuntime.handleMessage({
-      type: "PANDIRECT_SET_CONFIG",
-      aria2Url: "https://remote.example.com:6800/jsonrpc",
-    });
+    await autoRuntime.handleMessage(
+      {
+        type: "PANDIRECT_SET_CONFIG",
+        aria2Url: "https://remote.example.com:6800/jsonrpc",
+      },
+      POPUP_SENDER
+    );
     await assert.rejects(
       () =>
-        autoRuntime.handleMessage({
-          type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
-          provider: "quark",
-          itemId: "fid_demo_1",
-        }),
+        autoRuntime.handleMessage(
+          {
+            type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+            provider: "quark",
+            itemId: "fid_demo_1",
+          },
+          DOWNLOADER_SENDER
+        ),
       /安全保护/
     );
 
-    // 5. Local Aria2 URL trust check & cookie selector (drops expired cookies, avoids unrelated subdomain leakage)
+    // 5. Local Aria2 URL trust check (rejects .local mDNS & invalid octets) & cookie selector
     assert.equal(isTrustedLocalAria2Url("http://localhost:6800/jsonrpc"), true);
     assert.equal(isTrustedLocalAria2Url("http://127.0.0.1:16800/jsonrpc"), true);
     assert.equal(isTrustedLocalAria2Url("http://192.168.1.10:6800/jsonrpc"), true);
+    assert.equal(isTrustedLocalAria2Url("http://nas.local:6800/jsonrpc"), false);
+    assert.equal(isTrustedLocalAria2Url("http://10.999.1.1:6800/jsonrpc"), false);
     assert.equal(isTrustedLocalAria2Url("https://evil.example/jsonrpc"), false);
 
     const selectedHeader = selectQuarkCookiesForUrl({
@@ -576,19 +637,25 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
 
     // 5b. Legacy aria2Cookie values in storage are ignored/stripped and never persisted
     globalThis.chrome = cookieChrome;
-    await autoRuntime.handleMessage({
-      type: "PANDIRECT_SET_CONFIG",
-      aria2Url: "http://localhost:6800/jsonrpc",
-      provider: "quark",
-      providerConfig: { aria2Cookie: "legacy_stale_cookie_value" },
-    });
+    await autoRuntime.handleMessage(
+      {
+        type: "PANDIRECT_SET_CONFIG",
+        aria2Url: "http://localhost:6800/jsonrpc",
+        provider: "quark",
+        providerConfig: { aria2Cookie: "legacy_stale_cookie_value" },
+      },
+      POPUP_SENDER
+    );
     assert.equal(cookieState.localStore.providerConfigs?.quark?.aria2Cookie, undefined);
-    const liveAriaRes = await autoRuntime.handleMessage({
-      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
-      provider: "quark",
-      itemId: "fid_demo_1",
-      relativePath: "Movies/movie.mkv",
-    });
+    const liveAriaRes = await autoRuntime.handleMessage(
+      {
+        type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+        provider: "quark",
+        itemId: "fid_demo_1",
+        relativePath: "Movies/movie.mkv",
+      },
+      DOWNLOADER_SENDER
+    );
     assert.equal(liveAriaRes.ok, true);
     assert.deepEqual(capturedAria2Body.params[1].header, [
       "Cookie: __puus=live_session_puus; __uid=uid_123",
@@ -600,12 +667,15 @@ test("Quark download flow uses credentials: include for preflight/streaming, han
     simulate23018 = true;
     await assert.rejects(
       () =>
-        runtime.handleMessage({
-          type: "PANDIRECT_DOWNLOAD_ITEMS",
-          provider: "quark",
-          itemIds: ["fid_demo_1"],
-          mode: "browser",
-        }),
+        runtime.handleMessage(
+          {
+            type: "PANDIRECT_DOWNLOAD_ITEMS",
+            provider: "quark",
+            itemIds: ["fid_demo_1"],
+            mode: "browser",
+          },
+          QUARK_TAB_SENDER
+        ),
       /23018/
     );
   } finally {

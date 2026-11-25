@@ -132,13 +132,21 @@ function updateOverallUi() {
     : "空闲";
 }
 
+function renderEmptyFileList(text) {
+  fileListEl.textContent = "";
+  const emptyEl = document.createElement("div");
+  emptyEl.className = "empty";
+  emptyEl.textContent = text;
+  fileListEl.appendChild(emptyEl);
+}
+
 function renderTaskList() {
   if (tasks.length === 0) {
-    fileListEl.innerHTML = `<div class="empty">该文件夹内没有可下载的文件</div>`;
+    renderEmptyFileList("该文件夹内没有可下载的文件");
     return;
   }
 
-  fileListEl.innerHTML = "";
+  fileListEl.textContent = "";
   const frag = document.createDocumentFragment();
 
   tasks.forEach((task) => {
@@ -199,7 +207,7 @@ async function scanFolder() {
   totalBytes = 0;
   fileCountPill.textContent = "扫描中...";
   totalSizePill.textContent = "0 B";
-  fileListEl.innerHTML = `<div class="empty">正在递归扫描 ${initialDisplayLabel} ...</div>`;
+  renderEmptyFileList(`正在递归扫描 ${initialDisplayLabel} ...`);
   setButtonsState();
 
   try {
@@ -212,7 +220,7 @@ async function scanFolder() {
     if (!res?.ok) {
       showBanner(res?.error || "扫描目录失败", "err");
       fileCountPill.textContent = "扫描失败";
-      fileListEl.innerHTML = `<div class="empty">扫描失败，请确认已完成网盘授权且有目录权限。</div>`;
+      renderEmptyFileList("扫描失败，请确认已完成网盘授权且有目录权限。");
       return;
     }
 

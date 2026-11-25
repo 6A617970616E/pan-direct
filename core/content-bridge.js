@@ -45,7 +45,20 @@ window.addEventListener("message", (event) => {
         reply({ ok: false, error: chrome.runtime.lastError.message });
         return;
       }
-      reply({ ok: Boolean(res?.ok), data: res });
+      if (!res?.ok) {
+        reply({ ok: false, error: res?.error || "扩展状态不可用" });
+        return;
+      }
+      reply({
+        ok: true,
+        data: {
+          version: res.version,
+          edition: res.edition,
+          editionLabel: res.editionLabel,
+          enabled: res.enabled,
+          downloadMode: res.downloadMode,
+        },
+      });
     });
     return;
   }

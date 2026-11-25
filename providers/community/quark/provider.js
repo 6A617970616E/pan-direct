@@ -46,9 +46,14 @@ export function isAllowedQuarkDownloadUrl(rawUrl) {
     return (
       host === "pds.quark.cn" ||
       host.endsWith(".pds.quark.cn") ||
-      host === "quark.cn" ||
-      host.endsWith(".quark.cn") ||
-      host.endsWith(".uc.cn")
+      host.endsWith(".drive.quark.cn") ||
+      host.endsWith(".dl.quark.cn") ||
+      host.endsWith(".cdn.quark.cn") ||
+      /^(?:dl|cdn|pds)[a-z0-9-]*\.quark\.cn$/.test(host) ||
+      host.endsWith(".pds.uc.cn") ||
+      host.endsWith(".dl.uc.cn") ||
+      host.endsWith(".cdn.uc.cn") ||
+      /^(?:dl|cdn|pds|ucdl)[a-z0-9-]*\.uc\.cn$/.test(host)
     );
   } catch {
     return false;
@@ -260,6 +265,17 @@ async function checkQuarkSession() {
   return { loggedIn: false, nickname: "" };
 }
 
+function isValidIpv4Octets(parts) {
+  return (
+    parts.length === 4 &&
+    parts.every((part) => {
+      if (!/^\d{1,3}$/.test(part)) return false;
+      const n = Number(part);
+      return Number.isInteger(n) && n >= 0 && n <= 255;
+    })
+  );
+}
+
 export function isTrustedLocalAria2Url(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
@@ -267,22 +283,21 @@ export function isTrustedLocalAria2Url(rawUrl) {
       return false;
     }
     const host = parsed.hostname.toLowerCase();
+    // Explicitly exclude *.local (unauthenticated mDNS can be spoofed on shared LANs)
     if (
       host === "localhost" ||
       host === "127.0.0.1" ||
       host === "::1" ||
-      host === "[::1]" ||
-      host.endsWith(".local")
+      host === "[::1]"
     ) {
       return true;
     }
-    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
-    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
-    const m172 = host.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
-    if (m172) {
-      const second = Number(m172[1]);
-      if (second >= 16 && second <= 31) return true;
-    }
+    const octets = host.split(".");
+    if (!isValidIpv4Octets(octets)) return false;
+    const [a, b] = octets.map(Number);
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
     return false;
   } catch {
     return false;
@@ -471,9 +486,10 @@ export const quarkProvider = defineProvider({
   authType: "browser_session",
   dnrRuleIdBase: 2000,
   downloadCredentials: "include",
+  contentScriptDomains: ["pan.quark.cn", "drive.quark.cn"],
   defaultConfig: DEFAULT_QUARK_CONFIG,
   disallowedUrlMessage:
-    "仅允许下载夸克网盘域名（*.pds.quark.cn / *.quark.cn / *.uc.cn）的直链。",
+    "仅允许下载夸克网盘 CDN 域名（*.pds.quark.cn / *.drive.quark.cn / *.uc.cn 下载节点）的直链。",
 
   normalizeConfig(raw = {}) {
     return {
@@ -625,8 +641,9 @@ export const quarkProvider = defineProvider({
   },
 
   /**
-   * Checks whether the current browser profile has an active pan.quark.cn session.
-   * Never reads or exports cookies via chrome.cookies; relies strictly on credentials: "include".
+   * Checks whether the current browser profile has an active pan.quark.cn session
+   * using credentials: "include" (chrome.cookies is only read on-demand inside
+   * getAria2Headers() when forwarding downloads to a trusted local/LAN Aria2 RPC).
    */
   async startAuth(params, ctx) {
     await ctx.syncDnrRules();

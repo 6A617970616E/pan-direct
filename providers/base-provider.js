@@ -46,6 +46,7 @@ export function defineProvider(spec) {
     authType: "none",
     dnrRuleIdBase: 0,
     downloadCredentials: "omit",
+    contentScriptDomains: [],
     defaultConfig: {},
     disallowedUrlMessage: "下载链接域名不在该网盘允许的安全白名单范围内。",
     normalizeConfig: (raw) => ({ ...(spec.defaultConfig || {}), ...(raw || {}) }),

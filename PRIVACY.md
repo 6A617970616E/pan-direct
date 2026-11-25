@@ -1,7 +1,7 @@
 # PanDirect 隐私政策 / Privacy Policy
 
 **生效日期 / Effective Date:** 2026-11-24  
-**最后更新 / Last Updated:** 2026-11-24  
+**最后更新 / Last Updated:** 2026-11-25  
 **适用版本 / Applies To:** PanDirect v0.4.0 及后续版本（含商店正式版 `PanDirect` 与开源社区版 `PanDirect (Community)`）
 
 ---
@@ -25,7 +25,7 @@ PanDirect 采用单仓库双产物构建，不同发行版本的权限边界严�
   - **不申请 `cookies` 权限**，仅在 `https://pan.baidu.com/*` 页面注入悬浮下载抽屉脚本。
 - **开源社区版（`PanDirect (Community)`，仅发布于 GitHub Releases / 源码构建，不上架浏览器应用商店）**：
   - 额外包含社区实验性适配器（如夸克网盘、迅雷云盘）；
-  - 夸克网盘适配器为支持本地 Aria2 推送额外申请 `cookies` 权限，仅在用户主动触发推送至**本机或局域网 Aria2** 时在内存中实时读取对应网盘的会话 Cookie 并透传给本地 Aria2，**绝不持久化到存储、绝不输出日志、绝不发送至任何远程或公网地址**；
+  - 夸克网盘适配器为支持本机或局域网 Aria2 推送额外申请 `cookies` 权限，仅在用户主动触发推送至**本机回环地址或 RFC 1918 局域网 IP（不含易被伪造的 `.local` mDNS 域名）**的 Aria2 时，在内存中实时读取对应网盘会话 Cookie 并透传给目标 Aria2。**PanDirect 扩展自身绝不将 Cookie 持久化到存储、绝不输出日志、绝不发送至任何远程或公网地址**；但请注意：透传给 Aria2 后，若你的 Aria2 开启了会话保存（如 `--save-session`）或 RPC 日志，Aria2 端可能会将其写入本地会话/日志文件；若配置为局域网明文 `http://` 地址，请求头会在该局域网内明文传输（建议优先使用本机 `127.0.0.1` / `localhost` 或受信局域网内的 `https://`）；
   - 迅雷云盘适配器仅将已登录 `pan.xunlei.com` 页面中的会话令牌临时同步至内存级 `chrome.storage.session`（关闭浏览器自动清除，绝不写入磁盘 `chrome.storage.local`，绝不上传至任何第三方）。
 
 ### 3. 本地处理与存储的数据
@@ -43,6 +43,7 @@ PanDirect 采用单仓库双产物构建，不同发行版本的权限边界严�
 
 #### 3.3 仅在内存中瞬时处理的数据（不落盘）
 - 你主动浏览目录或点击下载时，扩展直接从官方网盘 API 获取的目录/文件元数据与临时下载直链，仅用于展示文件列表与发起本地下载，不会上传或持久化存储。
+- 按百度网盘开放平台协议要求，百度下载直链（`dlink`）需在查询参数中附带 `access_token`：浏览器原生下载会先完成 302 预检跳转到最终 CDN 节点；使用 Aria2 推送模式时，含 `access_token` 的直链将发往你配置的本地 Aria2，若 Aria2 开启 `--save-session` 或日志功能，Aria2 端可能会在本地记录该下载 URL。
 
 ### 4. 网络通信范围
 
@@ -103,7 +104,7 @@ PanDirect is built from a single open-source repository into two isolated editio
   - Does **not** request the `cookies` permission and injects content scripts **only** on `https://pan.baidu.com/*`.
 - **Community Edition (`PanDirect (Community)`, distributed exclusively via GitHub Releases / source builds, not on web stores):**
   - Includes optional community experimental adapters (such as Quark Netdisk and Xunlei Cloud Drive).
-  - The Quark adapter requests the `cookies` permission solely to read active session cookies in memory on demand when forwarding downloads to the user's **trusted local or LAN Aria2 RPC** (`localhost`, `127.0.0.1`, RFC 1918 private LAN). Cookies are never persisted to storage, never logged, and never transmitted to public/remote endpoints.
+  - The Quark adapter requests the `cookies` permission solely to read active session cookies in memory on demand when forwarding downloads to the user's **trusted loopback or RFC 1918 private LAN IP Aria2 RPC** (`localhost`, `127.0.0.1`, `::1`, or RFC 1918 private IPs; `.local` mDNS hostnames are rejected). **PanDirect itself never persists cookies to storage, never logs them, and never transmits them to public/remote endpoints.** Note that once forwarded, your Aria2 daemon itself may write request headers to disk if `--save-session` or RPC logging is enabled, and plain `http://` to a LAN IP transmits headers unencrypted over that local network (prefer loopback `127.0.0.1` / `localhost` or `https://` on trusted LANs).
   - The Xunlei adapter syncs active `pan.xunlei.com` session tokens strictly into ephemeral in-memory `chrome.storage.session` (cleared on browser close; never persisted to `chrome.storage.local` and never transmitted to third parties).
 
 ### 3. Data Handled Locally
@@ -121,6 +122,7 @@ Stored strictly on your local device (never written to `chrome.storage.sync` and
 
 #### 3.3 Ephemeral In-Memory Processing (Not Persisted)
 - File listings, directory metadata, and temporary signed download URLs retrieved directly from official cloud drive APIs upon your explicit action to display the file drawer and perform downloads.
+- Per Baidu Open Platform protocol, Baidu `dlink` URLs require `access_token` in the query string: native browser downloads resolve the 302 redirect to the signed CDN node first, whereas Aria2 push sends the `dlink` URL directly to your configured local Aria2 daemon (which may save the URL locally if Aria2 `--save-session` or RPC logging is enabled).
 
 ### 4. Network Endpoints
 

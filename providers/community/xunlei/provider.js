@@ -589,6 +589,7 @@ export const xunleiProvider = defineProvider({
   authType: "browser_session",
   dnrRuleIdBase: 3000,
   downloadCredentials: "omit",
+  contentScriptDomains: ["pan.xunlei.com"],
   defaultConfig: DEFAULT_XUNLEI_CONFIG,
   disallowedUrlMessage:
     "仅允许下载迅雷云盘官方 CDN 域名（*.xunlei.com / *.sdpan.cn / *.sandai.net / *.88cdn.com / *.xycdn.com 等）的直链。",
@@ -626,10 +627,24 @@ export const xunleiProvider = defineProvider({
     ];
   },
 
-  getDnrRules(config, { ruleIdBase, resourceTypes }) {
+  getDnrRules(config, { ruleIdBase, resourceTypes, extensionId } = {}) {
     const apiResourceTypes = ["xmlhttprequest", "other"];
+    const nonMainFrameResourceTypes = Array.isArray(resourceTypes)
+      ? resourceTypes.filter((t) => t !== "main_frame")
+      : ["sub_frame", "xmlhttprequest", "media", "other"];
     const excludedWebPages = ["pan.xunlei.com"];
     const downloadHeaders = buildXunleiDownloadRequestHeaders(config.userAgent);
+    const effectiveExtId =
+      extensionId ||
+      (typeof chrome !== "undefined" && chrome.runtime?.id
+        ? chrome.runtime.id
+        : "");
+    // Shared commercial CDNs (e.g. 88cdn.com / p2cdn.com / xycdn.com) are used by
+    // unrelated websites; restrict base rules strictly to extension-initiated fetch/streaming
+    // calls (hidden iframe downloads use per-download scoped session rules instead).
+    const sharedCdnScope = effectiveExtId
+      ? { initiatorDomains: [effectiveExtId] }
+      : { excludedInitiatorDomains: excludedWebPages };
 
     return [
       // Priority 1: supply Origin/Referer for extension-initiated Xunlei API calls
@@ -657,7 +672,7 @@ export const xunleiProvider = defineProvider({
           resourceTypes: apiResourceTypes,
         },
       },
-      // Priority 1: inject download UA + Referer on dedicated Xunlei CDN hosts
+      // Priority 1: inject download UA + Referer on dedicated Xunlei download hosts
       {
         id: ruleIdBase + 2,
         priority: 1,
@@ -667,7 +682,7 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: "||sdpan.cn/",
-          resourceTypes,
+          resourceTypes: nonMainFrameResourceTypes,
         },
       },
       {
@@ -679,7 +694,7 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: ".xunlei.com/download/",
-          resourceTypes,
+          resourceTypes: nonMainFrameResourceTypes,
         },
       },
       {
@@ -691,8 +706,8 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: "||sandai.net/",
-          excludedInitiatorDomains: excludedWebPages,
-          resourceTypes,
+          ...sharedCdnScope,
+          resourceTypes: apiResourceTypes,
         },
       },
       {
@@ -704,8 +719,8 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: "||xycdn.com/",
-          excludedInitiatorDomains: excludedWebPages,
-          resourceTypes,
+          ...sharedCdnScope,
+          resourceTypes: apiResourceTypes,
         },
       },
       {
@@ -717,8 +732,8 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: "||88cdn.com/",
-          excludedInitiatorDomains: excludedWebPages,
-          resourceTypes,
+          ...sharedCdnScope,
+          resourceTypes: apiResourceTypes,
         },
       },
       {
@@ -730,8 +745,8 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: "||xlpan.com/",
-          excludedInitiatorDomains: excludedWebPages,
-          resourceTypes,
+          ...sharedCdnScope,
+          resourceTypes: apiResourceTypes,
         },
       },
       {
@@ -743,8 +758,8 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: "||onethingpcs.com/",
-          excludedInitiatorDomains: excludedWebPages,
-          resourceTypes,
+          ...sharedCdnScope,
+          resourceTypes: apiResourceTypes,
         },
       },
       {
@@ -756,8 +771,8 @@ export const xunleiProvider = defineProvider({
         },
         condition: {
           urlFilter: "||p2cdn.com/",
-          excludedInitiatorDomains: excludedWebPages,
-          resourceTypes,
+          ...sharedCdnScope,
+          resourceTypes: apiResourceTypes,
         },
       },
     ];
@@ -768,8 +783,15 @@ export const xunleiProvider = defineProvider({
    * strictly in chrome.storage.session (never written to chrome.storage.local).
    */
   async syncSession(rawSession, ctx, sender = {}) {
+    if (
+      typeof chrome !== "undefined" &&
+      chrome.runtime?.id &&
+      sender?.id !== chrome.runtime.id
+    ) {
+      throw new Error("未授权的迅雷会话同步来源");
+    }
     const senderUrl = sender?.tab?.url || sender?.url || "";
-    if (senderUrl && !isTrustedXunleiOrigin(senderUrl)) {
+    if (!senderUrl || !isTrustedXunleiOrigin(senderUrl)) {
       throw new Error("未授权的迅雷会话同步来源");
     }
 

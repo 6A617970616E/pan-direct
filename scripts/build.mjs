@@ -237,7 +237,7 @@ export function assembleManifest({ baseManifest, edition, providers }) {
       mergedContentScripts.push(structuredClone(cs));
     }
   }
-  if (edition !== "store") {
+  if (edition === "dev") {
     for (const cs of baseManifest.content_scripts || []) {
       mergedContentScripts.push(structuredClone(cs));
     }
@@ -365,6 +365,26 @@ export function verifyEditionDirectory({ edition, outDir, manifest, providers })
     }
   }
 
+  // Release builds (both Store and Community) MUST NOT ship dev-only localhost bridge scripts
+  if (edition !== "dev") {
+    if (fs.existsSync(path.join(outDir, "core", "content-bridge.js"))) {
+      throw new Error(
+        `[${edition}] Release build must not ship dev-only core/content-bridge.js`
+      );
+    }
+    const hasLocalhostContentScript = (manifest.content_scripts || []).some(
+      (cs) =>
+        (cs.matches || []).some(
+          (m) => m.includes("localhost") || m.includes("127.0.0.1")
+        )
+    );
+    if (hasLocalhostContentScript) {
+      throw new Error(
+        `[${edition}] Release build must not inject content_scripts on localhost/127.0.0.1`
+      );
+    }
+  }
+
   // Store edition MUST NOT include any community provider files, imports, or cookies permission
   if (edition === "store") {
     if ((manifest.permissions || []).includes("cookies")) {
@@ -401,22 +421,6 @@ export function verifyEditionDirectory({ edition, outDir, manifest, providers })
     if (popupIndexContent.includes("./community/")) {
       throw new Error(
         "[store] Store providers/popup-index.js must not import community providers"
-      );
-    }
-    if (fs.existsSync(path.join(outDir, "core", "content-bridge.js"))) {
-      throw new Error(
-        "[store] Store build must not ship dev-only core/content-bridge.js"
-      );
-    }
-    const hasLocalhostContentScript = (manifest.content_scripts || []).some(
-      (cs) =>
-        (cs.matches || []).some(
-          (m) => m.includes("localhost") || m.includes("127.0.0.1")
-        )
-    );
-    if (hasLocalhostContentScript) {
-      throw new Error(
-        "[store] Store build must not inject content_scripts on localhost/127.0.0.1"
       );
     }
   }
@@ -465,7 +469,7 @@ export function buildEdition({
       excludeMarkdown: true,
     });
   }
-  if (edition === "store") {
+  if (edition !== "dev") {
     fs.rmSync(path.join(outDir, "core", "content-bridge.js"), { force: true });
   }
 

@@ -24,10 +24,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "..");
 
+const POPUP_SENDER = {
+  id: "test-ext-id",
+  url: "chrome-extension://test-ext-id/popup/popup.html",
+};
+
+const DOWNLOADER_SENDER = {
+  id: "test-ext-id",
+  url: "chrome-extension://test-ext-id/downloader/downloader.html",
+};
+
 function createMockChrome(initialLocal = {}) {
   const localStore = { ...initialLocal };
   const sessionStore = {};
   let dynamicRules = [];
+  let sessionRules = [];
   let badgeText = "";
   let badgeColor = "";
   const createdTabs = [];
@@ -79,6 +90,12 @@ function createMockChrome(initialLocal = {}) {
         dynamicRules = dynamicRules.filter((r) => !removeSet.has(r.id));
         dynamicRules.push(...addRules);
       },
+      getSessionRules: async () => [...sessionRules],
+      updateSessionRules: async ({ removeRuleIds = [], addRules = [] }) => {
+        const removeSet = new Set(removeRuleIds);
+        sessionRules = sessionRules.filter((r) => !removeSet.has(r.id));
+        sessionRules.push(...addRules);
+      },
     },
     action: {
       setBadgeText: async ({ text }) => {
@@ -122,6 +139,7 @@ function createMockChrome(initialLocal = {}) {
       localStore,
       sessionStore,
       getDynamicRules: () => dynamicRules,
+      getSessionRules: () => sessionRules,
       getBadge: () => ({ badgeText, badgeColor }),
       createdTabs,
       createdWindows,
@@ -220,7 +238,10 @@ test("storage seamlessly migrates v0.3.0 flat Baidu keys and preserves login", a
   const runtime = createBackgroundRuntime([baiduProvider]);
   await runtime.dnr.syncAllDnrRules();
 
-  const status = await runtime.handleMessage({ type: "PANDIRECT_GET_STATUS" });
+  const status = await runtime.handleMessage(
+    { type: "PANDIRECT_GET_STATUS" },
+    POPUP_SENDER
+  );
   assert.equal(status.ok, true);
   assert.equal(status.appKey, "test-app-key");
   assert.equal(status.tokenValid, true);
@@ -235,11 +256,14 @@ test("Baidu OAuth oob flow uses popup window + tabs.onUpdated and closes popup a
   globalThis.chrome = mockChrome;
 
   const runtime = createBackgroundRuntime([baiduProvider]);
-  const res = await runtime.handleMessage({
-    type: "PANDIRECT_OAUTH_LOGIN",
-    provider: "baidu",
-    appKey: "my-app-key",
-  });
+  const res = await runtime.handleMessage(
+    {
+      type: "PANDIRECT_OAUTH_LOGIN",
+      provider: "baidu",
+      appKey: "my-app-key",
+    },
+    POPUP_SENDER
+  );
   assert.equal(res.ok, true);
   assert.equal(state.createdWindows.length, 1);
 
@@ -359,11 +383,14 @@ test("Baidu listFolderRecursive uses BFS over xpan/file?method=list (never lista
 
   try {
     const runtime = createBackgroundRuntime([baiduProvider]);
-    const res = await runtime.handleMessage({
-      type: "PANDIRECT_LIST_FOLDER_RECURSIVE",
-      provider: "baidu",
-      path: "/homm3",
-    });
+    const res = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_LIST_FOLDER_RECURSIVE",
+        provider: "baidu",
+        path: "/homm3",
+      },
+      DOWNLOADER_SENDER
+    );
 
     assert.equal(res.ok, true);
     assert.equal(res.dirsScanned, 2);

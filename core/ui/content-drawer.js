@@ -137,7 +137,7 @@
           <div class="pd-title-wrap">
             <span class="pd-logo">${renderBrandIconSvg("hdr")}</span>
             <div>
-              <div class="pd-title">PanDirect · ${providerName}</div>
+              <div class="pd-title" id="pd-title"></div>
               <div class="pd-path" id="pd-current-path">/</div>
             </div>
           </div>
@@ -179,6 +179,10 @@
     const fab = root.querySelector("#pd-fab");
     const drawer = root.querySelector("#pd-drawer");
     const closeBtn = root.querySelector("#pd-close");
+    const titleEl = root.querySelector("#pd-title");
+    if (titleEl) {
+      titleEl.textContent = `PanDirect · ${providerName}`;
+    }
     const pathEl = root.querySelector("#pd-current-path");
     const noticeEl = root.querySelector("#pd-notice");
     const listEl = root.querySelector("#pd-list");
@@ -595,13 +599,21 @@
       await triggerDownloadItems(targetIds);
     }
 
+    function renderEmptyListMessage(text) {
+      listEl.textContent = "";
+      const emptyEl = document.createElement("div");
+      emptyEl.className = "pd-empty";
+      emptyEl.textContent = text;
+      listEl.appendChild(emptyEl);
+    }
+
     function renderFileList(files) {
       if (!files || files.length === 0) {
-        listEl.innerHTML = `<div class="pd-empty">当前目录为空</div>`;
+        renderEmptyListMessage("当前目录为空");
         return;
       }
 
-      listEl.innerHTML = "";
+      listEl.textContent = "";
       files.forEach((file) => {
         const itemId = file.id || file.fsId;
         const row = document.createElement("div");
@@ -682,7 +694,7 @@
       const initiallyRoot = activeDir === rootDir || activeDir === "/";
       upBtn.classList.toggle("pd-hidden", initiallyRoot && navStack.length === 0);
       hideNotice();
-      listEl.innerHTML = `<div class="pd-empty">正在读取目录 ${activeDisplayPath} ...</div>`;
+      renderEmptyListMessage(`正在读取目录 ${activeDisplayPath} ...`);
 
       try {
         const res = await sendMessage({
@@ -697,22 +709,30 @@
           cachedAt = 0;
           showNotice(res?.error || "读取目录失败", "error");
           if (fallbackDir) {
-            listEl.innerHTML = `
-              <div class="pd-empty">
-                ${fallbackHint}
-                <div style="margin-top:8px;">
-                  <button id="pd-try-fallback" class="pd-btn-ghost pd-btn-sm">尝试打开 ${fallbackDir}</button>
-                </div>
-              </div>
-            `;
-            const tryBtn = listEl.querySelector("#pd-try-fallback");
-            if (tryBtn) {
-              tryBtn.addEventListener("click", () =>
-                loadDirectory(fallbackDir, { resetHistory: true })
-              );
-            }
+            listEl.textContent = "";
+            const emptyEl = document.createElement("div");
+            emptyEl.className = "pd-empty";
+
+            const hintEl = document.createElement("div");
+            hintEl.textContent = fallbackHint;
+            emptyEl.appendChild(hintEl);
+
+            const actionWrap = document.createElement("div");
+            actionWrap.style.marginTop = "8px";
+
+            const tryBtn = document.createElement("button");
+            tryBtn.id = "pd-try-fallback";
+            tryBtn.className = "pd-btn-ghost pd-btn-sm";
+            tryBtn.textContent = `尝试打开 ${fallbackDir}`;
+            tryBtn.addEventListener("click", () =>
+              loadDirectory(fallbackDir, { resetHistory: true })
+            );
+
+            actionWrap.appendChild(tryBtn);
+            emptyEl.appendChild(actionWrap);
+            listEl.appendChild(emptyEl);
           } else {
-            listEl.innerHTML = `<div class="pd-empty">${emptyErrorHint}</div>`;
+            renderEmptyListMessage(emptyErrorHint);
           }
           return;
         }

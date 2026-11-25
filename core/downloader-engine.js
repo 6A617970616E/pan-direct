@@ -8,8 +8,13 @@ import { sanitizeFilename } from "./utils.js";
  * - Aria2 push with provider headers & preserved relative folder paths
  */
 export function createDownloaderEngine({ registry, storage, dnr }) {
-  async function probeAndResolveDownloadUrl(url, { credentials = "omit" } = {}) {
-    await dnr.syncAllDnrRules();
+  async function probeAndResolveDownloadUrl(
+    url,
+    { credentials = "omit", skipDnrSync = false } = {}
+  ) {
+    if (!skipDnrSync) {
+      await dnr.syncAllDnrRules();
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
@@ -23,18 +28,12 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
       });
 
       if (!res.ok) {
-        let bodySnippet = "";
         try {
-          bodySnippet = (await res.text())
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, 240);
+          await res.body?.cancel();
         } catch {
           // ignore
         }
-        throw new Error(
-          `直链预检失败（HTTP ${res.status}）${bodySnippet ? `：${bodySnippet}` : ""}`
-        );
+        throw new Error(`直链预检失败（HTTP ${res.status}）`);
       }
 
       const resolvedUrl = res.url || url;
@@ -59,6 +58,8 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
     url,
     filename,
     preferFrameDownload = false,
+    skipDnrSync = false,
+    initiatorDomains,
   }) {
     if (!provider.isAllowedDownloadUrl(url)) {
       throw new Error(
@@ -74,18 +75,35 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
     const credentials = provider.downloadCredentials || "omit";
     const { resolvedUrl, hasAttachment } = await probeAndResolveDownloadUrl(
       url,
-      { credentials }
+      { credentials, skipDnrSync }
     );
+
+    if (!provider.isAllowedDownloadUrl(resolvedUrl)) {
+      throw new Error(
+        provider.disallowedUrlMessage ||
+          "下载直链跳转后的目标域名不在当前网盘安全白名单范围内，已拦截。"
+      );
+    }
+
     const requestHeaders =
       typeof provider.getDownloadRequestHeaders === "function"
         ? provider.getDownloadRequestHeaders(providerConfig)
         : [];
 
-    await dnr.ensureResolvedHostRule({
+    const effectiveInitiators =
+      Array.isArray(initiatorDomains) && initiatorDomains.length > 0
+        ? initiatorDomains
+        : Array.isArray(provider.contentScriptDomains)
+        ? provider.contentScriptDomains
+        : [];
+
+    const installedRule = await dnr.ensureResolvedHostRule({
       resolvedUrl,
       requestHeaders,
       filename,
-      forceAttachment: !hasAttachment,
+      forceAttachment: preferFrameDownload && !hasAttachment,
+      preferFrameDownload,
+      initiatorDomains: effectiveInitiators,
     });
 
     if (preferFrameDownload) {
@@ -102,8 +120,15 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
       options.filename = safeName;
     }
 
-    const downloadId = await chrome.downloads.download(options);
-    return { mode: "browser", downloadId, frameDownloadUrl: resolvedUrl };
+    try {
+      const downloadId = await chrome.downloads.download(options);
+      return { mode: "browser", downloadId, frameDownloadUrl: resolvedUrl };
+    } catch (err) {
+      if (installedRule?.ruleId) {
+        await dnr.removeResolvedRuleById?.(installedRule.ruleId);
+      }
+      throw err;
+    }
   }
 
   async function downloadItemsByIds({
@@ -112,6 +137,7 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
     mode,
     preferFrameDownload = false,
     providerCtx,
+    initiatorDomains,
   }) {
     const provider = registry.get(providerId);
     const coreConfig = await storage.getCoreConfig();
@@ -120,6 +146,10 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
 
     const targets = await provider.resolveDownloadTargets(itemIds, providerCtx);
     const results = [];
+
+    if (effectiveMode !== "aria2") {
+      await dnr.syncAllDnrRules();
+    }
 
     for (const target of targets) {
       if (!target.url) {
@@ -162,6 +192,8 @@ export function createDownloaderEngine({ registry, storage, dnr }) {
                 url: target.url,
                 filename: target.filename,
                 preferFrameDownload,
+                skipDnrSync: true,
+                initiatorDomains,
               });
 
         results.push({

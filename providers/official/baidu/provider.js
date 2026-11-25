@@ -174,6 +174,7 @@ export const baiduProvider = defineProvider({
   description: "基于百度网盘开放平台官方 OAuth（oob 国内直连）与 xpan OpenAPI",
   authType: "oauth_oob",
   dnrRuleIdBase: 1000,
+  contentScriptDomains: ["pan.baidu.com"],
   defaultConfig: DEFAULT_BAIDU_CONFIG,
   disallowedUrlMessage:
     "仅允许下载百度网盘 PCS 域名（*.pcs.baidu.com / *.baidupcs.com）的直链。",

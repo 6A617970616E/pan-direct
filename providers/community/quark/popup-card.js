@@ -16,7 +16,7 @@ export function renderQuarkPopupCard({ container, provider, sendMessage, onStatu
       </div>
 
       <p class="hint" data-role="hint">
-        直接复用浏览器已登录的 <code>pan.quark.cn</code> 会话，浏览器直下、整文件夹写盘与推送本机 Aria2 均免配可用（Cookie 仅实时传给本机 Aria2，不落盘不上传）。
+        直接复用浏览器已登录的 <code>pan.quark.cn</code> 会话，浏览器直下、整文件夹写盘与推送本机 Aria2 均免配可用（Cookie 仅实时传给本机/局域网 Aria2，扩展自身不落盘不上传）。
       </p>
 
       <div class="row" style="margin-top: 8px;">

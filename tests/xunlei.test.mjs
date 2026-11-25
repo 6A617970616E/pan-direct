@@ -26,10 +26,26 @@ import { buildEdition } from "../scripts/build.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 
+const POPUP_SENDER = {
+  id: "test-ext-id",
+  url: "chrome-extension://test-ext-id/popup/popup.html",
+};
+
+const DOWNLOADER_SENDER = {
+  id: "test-ext-id",
+  url: "chrome-extension://test-ext-id/downloader/downloader.html",
+};
+
+const XUNLEI_TAB_SENDER = {
+  id: "test-ext-id",
+  tab: { url: "https://pan.xunlei.com/?path=%2F" },
+};
+
 function createChromeMock({ openTabs = [], tabSessionResponses = {} } = {}) {
   const localStore = {};
   const sessionStore = {};
   let dynamicRules = [];
+  let sessionRules = [];
   const createdTabs = [];
   const downloads = [];
   const sentTabMessages = [];
@@ -88,11 +104,17 @@ function createChromeMock({ openTabs = [], tabSessionResponses = {} } = {}) {
       },
     },
     declarativeNetRequest: {
-      getDynamicRules: async () => dynamicRules,
+      getDynamicRules: async () => [...dynamicRules],
       updateDynamicRules: async ({ removeRuleIds = [], addRules = [] }) => {
         const removeSet = new Set(removeRuleIds);
         dynamicRules = dynamicRules.filter((r) => !removeSet.has(r.id));
         dynamicRules.push(...addRules);
+      },
+      getSessionRules: async () => [...sessionRules],
+      updateSessionRules: async ({ removeRuleIds = [], addRules = [] }) => {
+        const removeSet = new Set(removeRuleIds);
+        sessionRules = sessionRules.filter((r) => !removeSet.has(r.id));
+        sessionRules.push(...addRules);
       },
     },
     action: {
@@ -125,6 +147,7 @@ function createChromeMock({ openTabs = [], tabSessionResponses = {} } = {}) {
     localStore,
     sessionStore,
     getDynamicRules: () => dynamicRules,
+    getSessionRules: () => sessionRules,
     createdTabs,
     downloads,
     sentTabMessages,
@@ -245,8 +268,13 @@ test("Xunlei syncSession rejects untrusted origins and keeps tokens strictly in 
           provider: "xunlei",
           session: { authorization: "Bearer stolen" },
         },
-        { tab: { url: "https://evil.example.com/" } }
+        { id: "test-ext-id", tab: { url: "https://evil.example.com/" } }
       ),
+    /未授权/
+  );
+  // Missing sender URL must fail closed as well
+  await assert.rejects(
+    () => xunleiProvider.syncSession({ authorization: "Bearer stolen" }, {}, {}),
     /未授权/
   );
   assert.equal(mock.sessionStore[XUNLEI_SESSION_STORAGE_KEY], undefined);
@@ -264,7 +292,7 @@ test("Xunlei syncSession rejects untrusted origins and keeps tokens strictly in 
         nickname: "迅雷测试用户",
       },
     },
-    { tab: { url: "https://pan.xunlei.com/?path=%2F" } }
+    XUNLEI_TAB_SENDER
   );
 
   assert.equal(syncRes.ok, true);
@@ -285,16 +313,19 @@ test("Xunlei syncSession rejects untrusted origins and keeps tokens strictly in 
   assert.equal(mock.localStore.providerConfigs.xunlei.nickname, "迅雷测试用户");
 
   // Logout wipes chrome.storage.session & resets status
-  const logoutRes = await runtime.handleMessage({
-    type: "PANDIRECT_PROVIDER_AUTH_LOGOUT",
-    provider: "xunlei",
-  });
+  const logoutRes = await runtime.handleMessage(
+    {
+      type: "PANDIRECT_PROVIDER_AUTH_LOGOUT",
+      provider: "xunlei",
+    },
+    POPUP_SENDER
+  );
   assert.equal(logoutRes.ok, true);
   assert.equal(mock.sessionStore[XUNLEI_SESSION_STORAGE_KEY], undefined);
   assert.equal(mock.localStore.providerConfigs.xunlei.loggedIn, false);
 });
 
-test("Xunlei DNR rules use 3000+ IDs, preserve pan.xunlei.com browsing, and inject download UA on CDN hosts", async () => {
+test("Xunlei DNR rules use 3000+ IDs, preserve pan.xunlei.com browsing, and scope shared CDN rules to extension", async () => {
   const mock = createChromeMock();
   const runtime = createBackgroundRuntime([baiduProvider, quarkProvider, xunleiProvider]);
 
@@ -311,8 +342,23 @@ test("Xunlei DNR rules use 3000+ IDs, preserve pan.xunlei.com browsing, and inje
 
   const sdpanRule = xunleiRules.find((r) => r.condition.urlFilter === "||sdpan.cn/");
   assert.ok(sdpanRule);
+  assert.equal(sdpanRule.condition.resourceTypes.includes("main_frame"), false);
   const uaHeader = sdpanRule.action.requestHeaders.find((h) => h.header === "user-agent");
   assert.equal(uaHeader.value, DEFAULT_XUNLEI_USER_AGENT);
+
+  for (const sharedFilter of [
+    "||88cdn.com/",
+    "||p2cdn.com/",
+    "||xycdn.com/",
+    "||sandai.net/",
+    "||xlpan.com/",
+    "||onethingpcs.com/",
+  ]) {
+    const rule = xunleiRules.find((r) => r.condition.urlFilter === sharedFilter);
+    assert.ok(rule, `Expected rule for ${sharedFilter}`);
+    assert.deepEqual(rule.condition.initiatorDomains, ["test-ext-id"]);
+    assert.deepEqual(rule.condition.resourceTypes, ["xmlhttprequest", "other"]);
+  }
 });
 
 test("Xunlei startAuth verifies live tab session, opens pan.xunlei.com when logged out, and supports listFiles + listFolderRecursive", async () => {
@@ -426,11 +472,14 @@ test("Xunlei startAuth verifies live tab session, opens pan.xunlei.com when logg
 
   try {
     // Logged out -> opens pan.xunlei.com tab
-    const outRes = await runtime.handleMessage({
-      type: "PANDIRECT_PROVIDER_AUTH_START",
-      provider: "xunlei",
-      openLoginIfNeeded: true,
-    });
+    const outRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_PROVIDER_AUTH_START",
+        provider: "xunlei",
+        openLoginIfNeeded: true,
+      },
+      POPUP_SENDER
+    );
     assert.equal(outRes.ok, true);
     assert.equal(outRes.authResult.loggedIn, false);
     assert.equal(outRes.authResult.openedLoginTab, true);
@@ -446,22 +495,28 @@ test("Xunlei startAuth verifies live tab session, opens pan.xunlei.com when logg
       nickname: "JayXunlei",
     };
 
-    const inRes = await runtime.handleMessage({
-      type: "PANDIRECT_PROVIDER_AUTH_START",
-      provider: "xunlei",
-      openLoginIfNeeded: true,
-    });
+    const inRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_PROVIDER_AUTH_START",
+        provider: "xunlei",
+        openLoginIfNeeded: true,
+      },
+      POPUP_SENDER
+    );
     assert.equal(inRes.ok, true);
     assert.equal(inRes.authResult.loggedIn, true);
     assert.equal(inRes.authResult.nickname, "JayXunlei");
     assert.equal(mock.sentTabMessages.some((m) => m.msg.type === XUNLEI_READ_SESSION_MESSAGE), true);
 
     // List root files with cursor pagination (folders sorted first, trashed filtered out)
-    const listRes = await runtime.handleMessage({
-      type: "PANDIRECT_LIST_FILES",
-      provider: "xunlei",
-      dir: "0",
-    });
+    const listRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_LIST_FILES",
+        provider: "xunlei",
+        dir: "0",
+      },
+      XUNLEI_TAB_SENDER
+    );
     assert.equal(listRes.ok, true);
     assert.equal(listRes.dir, "0");
     assert.equal(listRes.isRoot, true);
@@ -472,11 +527,14 @@ test("Xunlei startAuth verifies live tab session, opens pan.xunlei.com when logg
     assert.equal(listRes.files[2].name, "archive.zip");
 
     // Recursive BFS folder scan
-    const recRes = await runtime.handleMessage({
-      type: "PANDIRECT_LIST_FOLDER_RECURSIVE",
-      provider: "xunlei",
-      path: "dir_movies",
-    });
+    const recRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_LIST_FOLDER_RECURSIVE",
+        provider: "xunlei",
+        path: "dir_movies",
+      },
+      DOWNLOADER_SENDER
+    );
     assert.equal(recRes.ok, true);
     assert.equal(recRes.folderName, "Movies");
     assert.equal(recRes.dirsScanned, 2);
@@ -617,14 +675,17 @@ test("Xunlei resolveDownloadTargets uses PLAY (with CONSUME fallback), auto-retr
   };
 
   try {
-    // Browser hidden-iframe download triggers captcha retry + resolved-host attachment DNR rule
-    const dlRes = await runtime.handleMessage({
-      type: "PANDIRECT_DOWNLOAD_ITEMS",
-      provider: "xunlei",
-      itemIds: ["fid_zip_1"],
-      mode: "browser",
-      preferFrameDownload: true,
-    });
+    // Browser hidden-iframe download triggers captcha retry + exact-URL ephemeral session attachment DNR rule
+    const dlRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_DOWNLOAD_ITEMS",
+        provider: "xunlei",
+        itemIds: ["fid_zip_1"],
+        mode: "browser",
+        preferFrameDownload: true,
+      },
+      XUNLEI_TAB_SENDER
+    );
     assert.equal(dlRes.ok, true);
     assert.equal(playCallsForArchive, 2);
     assert.equal(dlRes.results[0].ok, true);
@@ -633,26 +694,40 @@ test("Xunlei resolveDownloadTargets uses PLAY (with CONSUME fallback), auto-retr
       "https://edge-08.sdpan.cn/dl/project?e=1799999999"
     );
 
-    const resolvedHostRule = mock
-      .getDynamicRules()
-      .find((r) => r.condition.urlFilter === "||edge-08.sdpan.cn/");
-    assert.ok(resolvedHostRule);
+    const resolvedSessionRule = mock
+      .getSessionRules()
+      .find(
+        (r) =>
+          r.condition.urlFilter ===
+          "|https://edge-08.sdpan.cn/dl/project?e=1799999999|"
+      );
+    assert.ok(resolvedSessionRule);
+    assert.deepEqual(resolvedSessionRule.condition.resourceTypes, ["sub_frame"]);
+    assert.deepEqual(resolvedSessionRule.condition.initiatorDomains, ["pan.xunlei.com"]);
     assert.ok(
-      resolvedHostRule.action.responseHeaders?.some(
+      resolvedSessionRule.action.responseHeaders?.some(
         (h) =>
           h.header === "content-disposition" &&
           h.value.includes("attachment") &&
           h.value.includes("project.zip")
       )
     );
+    // Ephemeral rule must NOT leak into persistent dynamic rules
+    assert.equal(
+      mock.getDynamicRules().some((r) => r.id >= 9001),
+      false
+    );
 
     // Aria2 push on fallback file (CONSUME fallback + UA/Referer headers, NO Cookie header)
-    const ariaRes = await runtime.handleMessage({
-      type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
-      provider: "xunlei",
-      itemId: "fid_fallback_2",
-      relativePath: "Docs/doc.pdf",
-    });
+    const ariaRes = await runtime.handleMessage(
+      {
+        type: "PANDIRECT_PUSH_ITEM_TO_ARIA2",
+        provider: "xunlei",
+        itemId: "fid_fallback_2",
+        relativePath: "Docs/doc.pdf",
+      },
+      DOWNLOADER_SENDER
+    );
     assert.equal(ariaRes.ok, true);
     assert.equal(ariaRes.gid, "gid_xl_001");
     assert.equal(aria2Requests.length, 1);
