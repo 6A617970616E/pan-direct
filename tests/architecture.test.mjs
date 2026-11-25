@@ -1232,6 +1232,30 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
   assert.equal(compactMenu.querySelectorAll(".pd-inline-menu-item").length, 1);
   assert.equal(horizontalBar.querySelectorAll(".pd-inline-menu-item").length, 0);
 
+  // 8. Regression: Baidu AgileToolBar overflow dropdown menu nested INSIDE .wp-s-agile-tool-bar__h-group MUST inject
+  const agileRowBar = createEl("div", { className: "wp-s-agile-tool-bar" });
+  const agileHGroup = createEl("div", { className: "wp-s-agile-tool-bar__h-group" });
+  const agileMoreWrap = createEl("div", { className: "wp-s-agile-tool-bar__h-more" });
+  const agileDropdown = createEl("div", { className: "wp-s-agile-tool-bar__h-more-menu" });
+  const agileRename = createEl("div", { className: "wp-s-agile-tool-bar__h-action", text: "重命名" });
+  const agileCopy = createEl("div", { className: "wp-s-agile-tool-bar__h-action", text: "复制" });
+  const agileMove = createEl("div", { className: "wp-s-agile-tool-bar__h-action", text: "移动" });
+  agileRename.getBoundingClientRect = () => ({ left: 540, top: 260, width: 132, height: 36 });
+  agileCopy.getBoundingClientRect = () => ({ left: 540, top: 296, width: 132, height: 36 });
+  agileMove.getBoundingClientRect = () => ({ left: 540, top: 332, width: 132, height: 36 });
+  agileDropdown.appendChild(agileRename);
+  agileDropdown.appendChild(agileCopy);
+  agileDropdown.appendChild(agileMove);
+  agileMoreWrap.appendChild(agileDropdown);
+  agileHGroup.appendChild(agileMoreWrap);
+  agileRowBar.appendChild(agileHGroup);
+  fileTd.appendChild(agileRowBar);
+
+  mutationCb([{ target: fileTd, addedNodes: [agileRowBar], removedNodes: [] }]);
+  await new Promise((r) => setTimeout(r, 25));
+
+  assert.equal(agileDropdown.querySelectorAll(".pd-inline-menu-item").length, 1);
+
   // Clean up timers cleanly
   storageListeners[0]({ enabled: { oldValue: true, newValue: false } }, "local");
 });

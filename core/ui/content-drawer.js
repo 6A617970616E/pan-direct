@@ -869,7 +869,10 @@
         }, 100),
         setTimeout(() => {
           if (isEnabled) syncInlineButtons();
-        }, 280)
+        }, 250),
+        setTimeout(() => {
+          if (isEnabled) syncInlineButtons();
+        }, 450)
       );
     }
 

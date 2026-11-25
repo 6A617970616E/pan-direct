@@ -166,9 +166,6 @@
     };
   }
 
-  const TOOLBAR_EXCLUSIONS =
-    ".wp-s-agile-tool-bar, .wp-s-header__toolbar, .wp-s-core-pan__header-tool-bar, .bar, .tcuLAu";
-
   const STRONG_MENU_LABELS = new Set([
     "重命名",
     "复制",
@@ -195,6 +192,7 @@
     "预览",
     "转存",
     "解压",
+    "云解压",
     "在线编辑",
   ]);
 
@@ -213,7 +211,11 @@
     );
     const isActionArea =
       isMoreTrigger ||
-      Boolean(el.closest("[class*='action'], [class*='operate'], .operate"));
+      Boolean(
+        el.closest(
+          "[class*='action'], [class*='operate'], .operate, .wp-s-agile-tool-bar"
+        )
+      );
     return { row, item, isMoreTrigger, isActionArea };
   }
 
@@ -273,18 +275,20 @@
     return cur;
   }
 
-  function isHorizontalPair(firstEl, secondEl) {
+  function isVisibleVerticalMenuPair(firstEl, secondEl) {
     if (
       typeof firstEl?.getBoundingClientRect !== "function" ||
       typeof secondEl?.getBoundingClientRect !== "function"
     ) {
-      return false;
+      return true;
     }
     const r1 = firstEl.getBoundingClientRect();
     const r2 = secondEl.getBoundingClientRect();
-    if (!r1 || !r2) return false;
-    if (r1.width === 0 && r2.width === 0) return false;
-    return Math.abs(r2.left - r1.left) >= 24 && Math.abs(r2.top - r1.top) < 10;
+    if (!r1 || !r2) return true;
+    if (r1.width <= 0 || r2.width <= 0) return false;
+    const isHorizontal =
+      Math.abs(r2.left - r1.left) >= 24 && Math.abs(r2.top - r1.top) < 10;
+    return !isHorizontal;
   }
 
   function collectLabelHolderElements(doc) {
@@ -322,6 +326,21 @@
     return holders;
   }
 
+  const HORIZONTAL_CONTAINER_CLASSES = new Set([
+    "wp-s-agile-tool-bar__h-group",
+    "wp-s-header__toolbar",
+  ]);
+
+  function isHorizontalBarContainer(container) {
+    if (!container) return false;
+    if (container.classList) {
+      for (const cls of HORIZONTAL_CONTAINER_CLASSES) {
+        if (container.classList.contains(cls)) return true;
+      }
+    }
+    return false;
+  }
+
   function findMenuAnchors(doc) {
     const grouped = new Map();
     const holders = collectLabelHolderElements(doc);
@@ -330,7 +349,6 @@
       if (!node || typeof node.closest !== "function") continue;
       if (
         node.closest(EXCLUDED_CONTAINERS) ||
-        node.closest(TOOLBAR_EXCLUSIONS) ||
         node.closest(".pd-inline-menu-item") ||
         node.closest(".pd-inline-btn")
       ) {
@@ -357,7 +375,7 @@
       }
       if (
         container.closest?.(EXCLUDED_CONTAINERS) ||
-        container.closest?.(TOOLBAR_EXCLUSIONS)
+        isHorizontalBarContainer(container)
       ) {
         continue;
       }
@@ -396,7 +414,7 @@
 
       const [firstEl] = entries[0];
       const [secondEl] = entries[1];
-      if (isHorizontalPair(firstEl, secondEl)) continue;
+      if (!isVisibleVerticalMenuPair(firstEl, secondEl)) continue;
 
       const itemTag =
         (firstEl.tagName || "").toUpperCase() === "LI" ? "li" : "div";
