@@ -432,50 +432,6 @@
     return results;
   }
 
-  function findToolbarAnchors(doc) {
-    const results = [];
-    const seenContainers = new Set();
-    const candidates = doc.querySelectorAll(
-      ".wp-s-agile-tool-bar button, .wp-s-agile-tool-bar a, .wp-s-header__toolbar button, .wp-s-core-pan__header-tool-bar button, .bar a.g-button, .tcuLAu a.g-button, button.u-button, a.g-button, [role='button']"
-    );
-
-    candidates.forEach((el) => {
-      if (typeof el.closest !== "function") return;
-      if (el.closest(EXCLUDED_CONTAINERS) || el.closest(".pd-inline-btn")) return;
-      if (el.closest(ROW_SELECTOR) || el.closest("tbody tr")) return;
-      if (isElementHiddenInline(el)) return;
-
-      const text = normalizeText(el.textContent);
-      const title = normalizeText(
-        el.getAttribute?.("title") || el.getAttribute?.("aria-label")
-      );
-      if (FORBIDDEN_DOWNLOAD_RE.test(`${text} ${title}`)) return;
-      if (text !== "下载" && !(text === "" && title === "下载")) return;
-
-      let anchor = el;
-      const parent = el.parentElement;
-      if (
-        parent &&
-        parent.classList?.contains("wp-s-agile-tool-bar__h-action") &&
-        typeof parent.querySelectorAll === "function" &&
-        parent.querySelectorAll("button, a").length <= 1
-      ) {
-        anchor = parent;
-      }
-
-      const container = anchor.parentElement;
-      if (!container || seenContainers.has(container)) return;
-      seenContainers.add(container);
-
-      results.push({
-        anchor,
-        insertPosition: "afterend",
-      });
-    });
-
-    return results;
-  }
-
   window.PanDirectDrawer.mount({
     providerId: "baidu",
     providerName: "百度网盘",
@@ -486,7 +442,6 @@
     inlineActions: {
       resolveRowContextFromTarget,
       findMenuAnchors,
-      findToolbarAnchors,
     },
   });
 })();

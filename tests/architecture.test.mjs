@@ -1146,11 +1146,9 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
 
   await new Promise((r) => setTimeout(r, 10));
 
-  // 1. Row hover bar stays 100% clean (zero icons injected next to native download icon)
+  // 1. Row hover bar and top selection toolbar stay 100% untouched (zero injected buttons)
   assert.equal(fileActions.querySelectorAll(".pd-inline-btn, .pd-inline-menu-item").length, 0);
-  // Top selection toolbar has 1 PD button; header promo buttons have 0
-  const toolbarBtns = body.querySelectorAll(".pd-inline-toolbar-btn");
-  assert.equal(toolbarBtns.length, 1);
+  assert.equal(body.querySelectorAll(".pd-inline-toolbar-btn").length, 0);
   assert.equal(header.querySelectorAll(".pd-inline-btn").length, 0);
 
   // 2. Clicking '...' on fileRow mounts portal menu -> injects '直连下载' right above '重命名'
@@ -1193,18 +1191,19 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
   assert.equal(folderCalls[0].path, "/Downloads/Games");
   assert.equal(folderCalls[0].mode, "aria2");
 
-  // 5. Clicking toolbar "PD 直下" button downloads checked row items
-  await toolbarBtns[0].trigger("click");
+  // 5. Clicking drawer "下已勾选" button downloads checked row items
+  await body.querySelector("#pd-dl-selected").trigger("click");
+  await new Promise((r) => setTimeout(r, 10));
   assert.equal(sentMessages.filter((m) => m.type === "PANDIRECT_DOWNLOAD_ITEMS").length, 2);
 
-  // 6. Toggling extension OFF removes ALL injected menu items & toolbar buttons immediately; ON restores them
+  // 6. Toggling extension OFF removes ALL injected menu items immediately; ON restores them
   storageListeners[0]({ enabled: { oldValue: true, newValue: false } }, "local");
   assert.equal(body.querySelectorAll(".pd-inline-btn, .pd-inline-menu-item").length, 0);
   assert.equal(toastEl.classList.contains("pd-hidden"), true);
 
   storageListeners[0]({ enabled: { oldValue: false, newValue: true } }, "local");
   assert.equal(menuList.querySelectorAll(".pd-inline-menu-item").length, 1);
-  assert.equal(body.querySelectorAll(".pd-inline-toolbar-btn").length, 1);
+  assert.equal(body.querySelectorAll(".pd-inline-toolbar-btn").length, 0);
 
   // 7. Regression: 2-item 复制/移动 <p>-tag menu in arbitrary class container mid-scaleY(0) transition MUST still inject,
   //    while a horizontal side-by-side 复制/移动 bar MUST NOT inject a menu item

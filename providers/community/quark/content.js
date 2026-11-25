@@ -418,39 +418,6 @@
     return results;
   }
 
-  function findToolbarAnchors(doc) {
-    const results = [];
-    const seenContainers = new Set();
-    const candidates = doc.querySelectorAll(
-      ".btn-operate button, .btn-operate a, .btn-operate [role='button'], .header-operate button, .header-operate a, .file-operate-bar button, .ant-btn, button, a, [role='button']"
-    );
-
-    candidates.forEach((el) => {
-      if (typeof el.closest !== "function") return;
-      if (el.closest(EXCLUDED_CONTAINERS) || el.closest(".pd-inline-btn")) return;
-      if (el.closest(ROW_SELECTOR) || el.closest("tbody tr")) return;
-      if (isElementHiddenInline(el)) return;
-
-      const text = normalizeText(el.textContent);
-      const title = normalizeText(
-        el.getAttribute?.("title") || el.getAttribute?.("aria-label")
-      );
-      if (FORBIDDEN_DOWNLOAD_RE.test(`${text} ${title}`)) return;
-      if (text !== "下载" && !(text === "" && title === "下载")) return;
-
-      const container = el.parentElement;
-      if (!container || seenContainers.has(container)) return;
-      seenContainers.add(container);
-
-      results.push({
-        anchor: el,
-        insertPosition: "afterend",
-      });
-    });
-
-    return results;
-  }
-
   window.PanDirectDrawer.mount({
     providerId: "quark",
     providerName: "夸克网盘（社区版）",
@@ -463,7 +430,6 @@
     inlineActions: {
       resolveRowContextFromTarget,
       findMenuAnchors,
-      findToolbarAnchors,
     },
   });
 })();

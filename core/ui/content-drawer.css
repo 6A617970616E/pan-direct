@@ -317,22 +317,7 @@
   opacity: 1;
 }
 
-/* Non-intrusive inline shortcut buttons injected alongside native download buttons */
-.pd-inline-btn {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  outline: none;
-  cursor: pointer;
-  flex-shrink: 0;
-  vertical-align: middle;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  transition: transform 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease, filter 0.14s ease;
-  user-select: none;
-}
-
+/* Non-intrusive dropdown menu item injected into the native three-dots menu */
 .pd-inline-menu-item {
   box-sizing: border-box;
   list-style: none;
@@ -385,49 +370,6 @@
   min-width: 0;
 }
 
-.pd-inline-toolbar-btn {
-  height: 30px;
-  padding: 0 11px 0 6px;
-  margin: 0 4px;
-  gap: 5px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
-  color: #ffffff;
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  box-shadow: 0 3px 10px rgba(29, 78, 216, 0.28);
-}
-
-.pd-inline-toolbar-btn:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 5px 14px rgba(29, 78, 216, 0.38);
-}
-
-.pd-inline-toolbar-btn:active {
-  transform: translateY(0.5px);
-}
-
-.pd-inline-toolbar-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
-}
-
-.pd-inline-toolbar-icon svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.pd-inline-btn.pd-inline-busy,
 .pd-inline-menu-item.pd-inline-busy {
   opacity: 0.62;
   cursor: wait;

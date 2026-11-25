@@ -970,40 +970,6 @@
       }
     }
 
-    function createInlineToolbarButton(onActivate) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "pd-inline-btn pd-inline-toolbar-btn";
-      if (typeof btn.setAttribute === "function") {
-        btn.setAttribute("data-pd-inline", "toolbar");
-        btn.setAttribute("aria-label", getInlineTooltip("toolbar"));
-      }
-      btn.title = getInlineTooltip("toolbar");
-      btn.innerHTML = `<span class="pd-inline-toolbar-icon">${renderBrandIconSvg()}</span><span>PD 直下</span>`;
-
-      const stopBubble = (e) => {
-        if (typeof e.stopPropagation === "function") e.stopPropagation();
-      };
-      btn.addEventListener("mousedown", stopBubble);
-      btn.addEventListener("pointerdown", stopBubble);
-      btn.addEventListener("click", async (e) => {
-        if (typeof e.preventDefault === "function") e.preventDefault();
-        if (typeof e.stopPropagation === "function") e.stopPropagation();
-        if (typeof e.stopImmediatePropagation === "function") {
-          e.stopImmediatePropagation();
-        }
-        if (btn.classList.contains("pd-inline-busy")) return;
-        btn.classList.add("pd-inline-busy");
-        try {
-          await onActivate();
-        } finally {
-          btn.classList.remove("pd-inline-busy");
-        }
-      });
-
-      return btn;
-    }
-
     function createInlineMenuItem(itemTag, onActivate) {
       const tag = String(itemTag || "div").toLowerCase() === "li" ? "li" : "div";
       const itemEl = document.createElement(tag);
@@ -1053,9 +1019,6 @@
     function hasSiblingInlineNode(anchor, kind) {
       const parent = anchor?.parentElement || anchor?.parentNode;
       if (!parent || typeof parent.querySelector !== "function") return false;
-      if (kind === "toolbar") {
-        return Boolean(parent.querySelector(".pd-inline-toolbar-btn"));
-      }
       if (kind === "menu") {
         return Boolean(parent.querySelector(".pd-inline-menu-item"));
       }
@@ -1094,33 +1057,6 @@
           });
           if (insertAdjacentCompat(anchor, position, itemEl)) {
             const entry = { btn: itemEl, anchor, kind: "menu" };
-            injectedEntries.add(entry);
-            anchorToEntry.set(anchor, entry);
-          }
-        }
-      }
-
-      if (typeof inlineActions.findToolbarAnchors === "function") {
-        let toolbarTargets = [];
-        try {
-          toolbarTargets = inlineActions.findToolbarAnchors(document) || [];
-        } catch {
-          toolbarTargets = [];
-        }
-
-        for (const target of toolbarTargets) {
-          const anchor = target?.anchor;
-          if (!anchor) continue;
-          if (typeof anchor.closest === "function" && anchor.closest("#pandirect-root")) {
-            continue;
-          }
-          if (anchorToEntry.has(anchor) || hasSiblingInlineNode(anchor, "toolbar")) {
-            continue;
-          }
-          const position = target.insertPosition || "afterend";
-          const btn = createInlineToolbarButton(() => handleDownloadSelected());
-          if (insertAdjacentCompat(anchor, position, btn)) {
-            const entry = { btn, anchor, kind: "toolbar" };
             injectedEntries.add(entry);
             anchorToEntry.set(anchor, entry);
           }

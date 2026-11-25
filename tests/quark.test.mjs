@@ -676,18 +676,16 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
     }
   );
 
-  // Verify Quark inlineActions config & idIsFolderPath
+  // Verify Quark inlineActions config & idIsFolderPath (menu-only, no top toolbar injection)
   assert.equal(mountedAdapter.idIsFolderPath, true);
   assert.equal(
     typeof mountedAdapter.inlineActions?.resolveRowContextFromTarget,
     "function"
   );
   assert.equal(typeof mountedAdapter.inlineActions?.findMenuAnchors, "function");
-  assert.equal(typeof mountedAdapter.inlineActions?.findToolbarAnchors, "function");
+  assert.equal(mountedAdapter.inlineActions?.findToolbarAnchors, undefined);
 
-  // Build minimal Quark AntD row + dropdown menu + toolbar DOM
-  const mockToolbarContainer = { tagName: "DIV" };
-  const mockPromoContainer = { tagName: "DIV" };
+  // Build minimal Quark AntD row + dropdown menu DOM
   const mockRow = {
     nodeType: 1,
     tagName: "TR",
@@ -741,33 +739,11 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
     closest: () => null,
   };
 
-  const mockToolbarDlBtn = {
-    tagName: "BUTTON",
-    className: "ant-btn",
-    textContent: "下载",
-    style: {},
-    hidden: false,
-    parentElement: mockToolbarContainer,
-    getAttribute: () => null,
-    closest: () => null,
-  };
-
-  const mockClientDlBtn = {
-    tagName: "BUTTON",
-    className: "ant-btn",
-    textContent: "客户端下载",
-    style: {},
-    hidden: false,
-    parentElement: mockPromoContainer,
-    getAttribute: () => null,
-    closest: () => null,
-  };
-
   const mockQuarkDoc = {
     body: { children: [] },
     querySelectorAll: (sel) => {
       if (sel.includes("menuitem")) return [mockMenuRename, mockMenuMove];
-      return [mockToolbarDlBtn, mockClientDlBtn];
+      return [];
     },
   };
 
@@ -776,10 +752,6 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
   assert.equal(menuAnchors[0].anchor, mockMenuRename);
   assert.equal(menuAnchors[0].insertPosition, "beforebegin");
   assert.equal(menuAnchors[0].itemTag, "li");
-
-  const toolbarAnchors = mountedAdapter.inlineActions.findToolbarAnchors(mockQuarkDoc);
-  assert.equal(toolbarAnchors.length, 1);
-  assert.equal(toolbarAnchors[0].anchor, mockToolbarDlBtn);
 });
 
 test("Real repo dual-artifact build keeps Quark and cookies 100% out of store.zip and wires them into community.zip", async () => {
