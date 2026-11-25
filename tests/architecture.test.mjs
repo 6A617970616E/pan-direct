@@ -24,6 +24,12 @@ import {
   isAllowedBaiduDownloadUrl,
 } from "../providers/official/baidu/provider.js";
 import { buildEdition } from "../scripts/build.mjs";
+import {
+  isValidExtensionVersion,
+  resolveNextVersion,
+  checkVersionConsistency,
+  bumpVersion,
+} from "../scripts/bump-version.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1399,5 +1405,96 @@ test("GitHub issue templates and UI feedback links exist in popup and folder dow
     assert.ok(html.includes('rel="noopener noreferrer"'), `${relHtml} missing rel guard`);
   }
 });
+
+test("scripts/bump-version validates, checks consistency, and bumps all version targets in lockstep", () => {
+  assert.equal(isValidExtensionVersion("0.4.0"), true);
+  assert.equal(isValidExtensionVersion("1.12.65535"), true);
+  assert.equal(isValidExtensionVersion("0.4.0-beta.1"), false);
+  assert.equal(isValidExtensionVersion("0.04.0"), false);
+  assert.equal(isValidExtensionVersion("0.4.65536"), false);
+
+  assert.equal(resolveNextVersion("0.4.0", "patch"), "0.4.1");
+  assert.equal(resolveNextVersion("0.4.0", "minor"), "0.5.0");
+  assert.equal(resolveNextVersion("0.4.0", "major"), "1.0.0");
+  assert.equal(resolveNextVersion("0.4.0", "v0.4.9"), "0.4.9");
+  assert.throws(() => resolveNextVersion("0.4.0", "0.4.1-rc1"));
+
+  // Real repository version consistency check passes and validates expectedTag
+  const repoCheck = checkVersionConsistency(REPO_ROOT);
+  assert.equal(repoCheck.ok, true);
+  assert.equal(
+    checkVersionConsistency(REPO_ROOT, { expectedTag: `v${repoCheck.version}` }).ok,
+    true
+  );
+  assert.throws(
+    () => checkVersionConsistency(REPO_ROOT, { expectedTag: "v9.9.9" }),
+    /does not match/
+  );
+
+  // Isolated temp workspace test for bumpVersion()
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pandirect-version-test-"));
+  try {
+    for (const item of [
+      "package.json",
+      "manifest.base.json",
+      "manifest.json",
+      "popup",
+      "providers",
+    ]) {
+      fs.cpSync(path.join(REPO_ROOT, item), path.join(tempRoot, item), {
+        recursive: true,
+      });
+    }
+
+    const res = bumpVersion(tempRoot, "patch");
+    assert.equal(res.previousVersion, repoCheck.version);
+    assert.equal(res.version, resolveNextVersion(repoCheck.version, "patch"));
+    assert.equal(
+      checkVersionConsistency(tempRoot, { expectedTag: `v${res.version}` }).ok,
+      true
+    );
+
+    const updatedPopup = fs.readFileSync(
+      path.join(tempRoot, "popup", "popup.html"),
+      "utf8"
+    );
+    assert.ok(updatedPopup.includes(`<span id="versionText">v${res.version}</span>`));
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("GitHub Actions CI and Release workflows exist with expected guards and dual-artifact publishing", () => {
+  const ciPath = path.join(REPO_ROOT, ".github", "workflows", "ci.yml");
+  const releasePath = path.join(REPO_ROOT, ".github", "workflows", "release.yml");
+  assert.equal(fs.existsSync(ciPath), true);
+  assert.equal(fs.existsSync(releasePath), true);
+
+  const ciYml = fs.readFileSync(ciPath, "utf8");
+  for (const required of [
+    "npm run version:check",
+    "npm run sync-root",
+    "npm test",
+    "npm run build",
+  ]) {
+    assert.ok(ciYml.includes(required), `ci.yml missing: ${required}`);
+  }
+
+  const releaseYml = fs.readFileSync(releasePath, "utf8");
+  for (const required of [
+    'v[0-9]*.[0-9]*.[0-9]*',
+    "workflow_dispatch:",
+    "scripts/bump-version.mjs --check --tag=",
+    "npm test",
+    "npm run build",
+    "pan-direct-store-${TAG}.zip",
+    "pan-direct-community-${TAG}.zip",
+    "SHA256SUMS.txt",
+    "gh release create",
+  ]) {
+    assert.ok(releaseYml.includes(required), `release.yml missing: ${required}`);
+  }
+});
+
 
 
