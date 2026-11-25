@@ -16,7 +16,7 @@
   ].join(", ");
 
   const EXCLUDED_CONTAINERS =
-    "#pandirect-root, thead, .el-dialog, .u-dialog, .u-modal, [role='dialog']";
+    "#pandirect-root, thead, .el-dialog, .u-dialog, .u-modal, [aria-modal='true']";
 
   const ACTION_TITLES = new Set([
     "下载",
@@ -211,7 +211,10 @@
         "[title='更多'], [aria-label='更多'], [class*='more'], [class*='ellipsis'], [class*='dot']"
       )
     );
-    return { row, item, isMoreTrigger };
+    const isActionArea =
+      isMoreTrigger ||
+      Boolean(el.closest("[class*='action'], [class*='operate'], .operate"));
+    return { row, item, isMoreTrigger, isActionArea };
   }
 
   function normalizeMenuText(str) {
@@ -234,7 +237,7 @@
 
   function climbToMenuItem(el, label) {
     let cur = el;
-    for (let depth = 0; depth < 4; depth++) {
+    for (let depth = 0; depth < 6; depth++) {
       const parent = cur.parentElement;
       if (!parent) break;
       const tag = (parent.tagName || "").toUpperCase();
@@ -243,6 +246,7 @@
         tag === "HTML" ||
         tag === "UL" ||
         tag === "OL" ||
+        tag === "DL" ||
         tag === "TABLE" ||
         tag === "TBODY" ||
         tag === "TR" ||
@@ -269,111 +273,110 @@
     return cur;
   }
 
-  function isVerticallyStacked(firstEl, secondEl) {
+  function isHorizontalPair(firstEl, secondEl) {
     if (
       typeof firstEl?.getBoundingClientRect !== "function" ||
       typeof secondEl?.getBoundingClientRect !== "function"
     ) {
-      return true;
+      return false;
     }
     const r1 = firstEl.getBoundingClientRect();
     const r2 = secondEl.getBoundingClientRect();
-    if (!r1 || !r2) return true;
-    if (r1.width === 0 && r1.height === 0 && r2.width === 0 && r2.height === 0) {
-      return true;
-    }
-    return Math.abs(r2.top - r1.top) >= 12;
+    if (!r1 || !r2) return false;
+    if (r1.width === 0 && r2.width === 0) return false;
+    return Math.abs(r2.left - r1.left) >= 24 && Math.abs(r2.top - r1.top) < 10;
   }
 
-  function collectCandidateMenuRoots(doc) {
-    const roots = new Set();
+  function collectLabelHolderElements(doc) {
+    const holders = [];
+    if (typeof doc.createTreeWalker === "function" && doc.body) {
+      const SHOW_TEXT =
+        typeof NodeFilter !== "undefined" && NodeFilter.SHOW_TEXT
+          ? NodeFilter.SHOW_TEXT
+          : 4;
+      const walker = doc.createTreeWalker(doc.body, SHOW_TEXT);
+      let textNode = walker.nextNode();
+      while (textNode) {
+        const label = normalizeMenuText(textNode.nodeValue);
+        if (label && ALL_MENU_LABELS.has(label)) {
+          const parentEl = textNode.parentElement;
+          if (parentEl) {
+            holders.push({ node: parentEl, label });
+          }
+        }
+        textNode = walker.nextNode();
+      }
+      return holders;
+    }
+
     if (typeof doc.querySelectorAll === "function") {
       doc
-        .querySelectorAll(
-          "[role='menu'], [role='tooltip'], ul, [class*='popover'], [class*='popper'], [class*='dropdown'], [class*='context'], [class*='more-menu'], [class*='action-menu']"
-        )
-        .forEach((node) => roots.add(node));
+        .querySelectorAll("li, [role='menuitem'], a, button, div, span, p, dd")
+        .forEach((node) => {
+          const label = normalizeMenuText(node.textContent);
+          if (label && ALL_MENU_LABELS.has(label)) {
+            holders.push({ node, label });
+          }
+        });
     }
-    const bodyChildren = doc.body?.children || [];
-    for (let i = 0; i < bodyChildren.length; i++) {
-      const child = bodyChildren[i];
-      if (!child || child.id === "pandirect-root" || child.id === "app" || child.id === "root") {
-        continue;
-      }
-      const tag = (child.tagName || "").toUpperCase();
-      if (tag === "SCRIPT" || tag === "STYLE" || tag === "LINK" || tag === "IFRAME") {
-        continue;
-      }
-      if (
-        typeof child.querySelector === "function" &&
-        child.querySelector("table, .wp-s-pan-table__body-row")
-      ) {
-        continue;
-      }
-      roots.add(child);
-    }
-    return Array.from(roots);
+    return holders;
   }
-
-  const MENU_CONTAINER_HINT =
-    "[role='menu'], [role='tooltip'], ul, [class*='popover'], [class*='popper'], [class*='dropdown'], [class*='menu'], [class*='context']";
 
   function findMenuAnchors(doc) {
     const grouped = new Map();
-    const roots = collectCandidateMenuRoots(doc);
+    const holders = collectLabelHolderElements(doc);
 
-    for (const root of roots) {
-      if (!root || typeof root.querySelectorAll !== "function") continue;
-      if (root.closest?.(EXCLUDED_CONTAINERS) || root.closest?.(TOOLBAR_EXCLUSIONS)) {
+    for (const { node, label } of holders) {
+      if (!node || typeof node.closest !== "function") continue;
+      if (
+        node.closest(EXCLUDED_CONTAINERS) ||
+        node.closest(TOOLBAR_EXCLUSIONS) ||
+        node.closest(".pd-inline-menu-item") ||
+        node.closest(".pd-inline-btn")
+      ) {
         continue;
       }
-      const nodes = root.querySelectorAll("li, [role='menuitem'], a, button, div, span");
-      nodes.forEach((node) => {
-        if (!node || typeof node.closest !== "function") return;
-        if (
-          node.closest(EXCLUDED_CONTAINERS) ||
-          node.closest(TOOLBAR_EXCLUSIONS) ||
-          node.closest(".pd-inline-menu-item")
-        ) {
-          return;
-        }
-        const label = normalizeMenuText(node.textContent);
-        if (!label || !ALL_MENU_LABELS.has(label)) return;
+      if (node.closest(".wp-s-pan-list__file-name-title-text, .file-name")) {
+        continue;
+      }
 
-        const itemEl = climbToMenuItem(node, label);
-        const container = itemEl.parentElement;
-        if (!container) return;
-        const cTag = (container.tagName || "").toUpperCase();
-        if (
-          cTag === "BODY" ||
-          cTag === "HTML" ||
-          cTag === "TABLE" ||
-          cTag === "TBODY" ||
-          cTag === "THEAD" ||
-          cTag === "TR" ||
-          cTag === "TD"
-        ) {
-          return;
-        }
-        if (
-          container.closest?.(EXCLUDED_CONTAINERS) ||
-          container.closest?.(TOOLBAR_EXCLUSIONS)
-        ) {
-          return;
-        }
-        const enclosingRow = container.closest?.(ROW_SELECTOR) || container.closest?.("tbody tr");
-        if (enclosingRow && !container.closest?.(MENU_CONTAINER_HINT)) {
-          return;
-        }
+      const itemEl = climbToMenuItem(node, label);
+      const container = itemEl.parentElement;
+      if (!container) continue;
+      const cTag = (container.tagName || "").toUpperCase();
+      if (
+        cTag === "BODY" ||
+        cTag === "HTML" ||
+        cTag === "TABLE" ||
+        cTag === "TBODY" ||
+        cTag === "THEAD" ||
+        cTag === "TR" ||
+        cTag === "TD"
+      ) {
+        continue;
+      }
+      if (
+        container.closest?.(EXCLUDED_CONTAINERS) ||
+        container.closest?.(TOOLBAR_EXCLUSIONS)
+      ) {
+        continue;
+      }
+      if (
+        typeof itemEl.querySelector === "function" &&
+        itemEl.querySelector(
+          "input[type='checkbox'], .wp-s-pan-list__file-name-title-text"
+        )
+      ) {
+        continue;
+      }
 
-        if (!grouped.has(container)) {
-          grouped.set(container, new Map());
-        }
-        const itemMap = grouped.get(container);
-        if (!itemMap.has(itemEl)) {
-          itemMap.set(itemEl, label);
-        }
-      });
+      if (!grouped.has(container)) {
+        grouped.set(container, new Map());
+      }
+      const itemMap = grouped.get(container);
+      if (!itemMap.has(itemEl)) {
+        itemMap.set(itemEl, label);
+      }
     }
 
     const results = [];
@@ -393,7 +396,7 @@
 
       const [firstEl] = entries[0];
       const [secondEl] = entries[1];
-      if (!isVerticallyStacked(firstEl, secondEl)) continue;
+      if (isHorizontalPair(firstEl, secondEl)) continue;
 
       const itemTag =
         (firstEl.tagName || "").toUpperCase() === "LI" ? "li" : "div";

@@ -766,7 +766,7 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
   const mockQuarkDoc = {
     body: { children: [] },
     querySelectorAll: (sel) => {
-      if (sel.includes("ant-dropdown-menu")) return [mockDropdownUl];
+      if (sel.includes("menuitem")) return [mockMenuRename, mockMenuMove];
       return [mockToolbarDlBtn, mockClientDlBtn];
     },
   };

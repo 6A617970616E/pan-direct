@@ -850,6 +850,29 @@
       updateActiveRowFromEvent(e, { strong: false });
     }
 
+    let delayedScanTimers = [];
+
+    function clearDelayedScans() {
+      if (typeof clearTimeout === "function") {
+        for (const t of delayedScanTimers) clearTimeout(t);
+      }
+      delayedScanTimers = [];
+    }
+
+    function scheduleMenuFollowUpScans() {
+      clearDelayedScans();
+      scheduleInlineScan();
+      if (!inlineActions || !isEnabled) return;
+      delayedScanTimers.push(
+        setTimeout(() => {
+          if (isEnabled) syncInlineButtons();
+        }, 100),
+        setTimeout(() => {
+          if (isEnabled) syncInlineButtons();
+        }, 280)
+      );
+    }
+
     function updateActiveRowFromEvent(e, { strong = false } = {}) {
       if (!isEnabled || !inlineActions) return;
       if (typeof inlineActions.resolveRowContextFromTarget !== "function") return;
@@ -868,25 +891,23 @@
       if (strong) {
         activeMenuTarget = { item: ctx.item, row: ctx.row || null, updatedAt: now };
         rowLockUntil = now + 1200;
-        scheduleInlineScan();
-        setTimeout(() => {
-          if (isEnabled) syncInlineButtons();
-        }, 80);
+        scheduleMenuFollowUpScans();
         return;
       }
 
       if (ctx.isMoreTrigger) {
         activeMenuTarget = { item: ctx.item, row: ctx.row || null, updatedAt: now };
         rowLockUntil = now + 900;
-        scheduleInlineScan();
-        setTimeout(() => {
-          if (isEnabled) syncInlineButtons();
-        }, 80);
+        scheduleMenuFollowUpScans();
         return;
       }
 
       if (now >= rowLockUntil && !hasVisibleInjectedMenu()) {
         activeMenuTarget = { item: ctx.item, row: ctx.row || null, updatedAt: now };
+      }
+
+      if (ctx.isActionArea) {
+        scheduleMenuFollowUpScans();
       }
     }
 
@@ -925,6 +946,7 @@
         inlineObserver.disconnect();
         inlineObserver = null;
       }
+      clearDelayedScans();
       detachRowTrackingListeners();
       activeMenuTarget = null;
       rowLockUntil = 0;

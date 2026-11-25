@@ -1205,5 +1205,34 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
   storageListeners[0]({ enabled: { oldValue: false, newValue: true } }, "local");
   assert.equal(menuList.querySelectorAll(".pd-inline-menu-item").length, 1);
   assert.equal(body.querySelectorAll(".pd-inline-toolbar-btn").length, 1);
+
+  // 7. Regression: 2-item 复制/移动 <p>-tag menu in arbitrary class container mid-scaleY(0) transition MUST still inject,
+  //    while a horizontal side-by-side 复制/移动 bar MUST NOT inject a menu item
+  const compactMenu = createEl("div", { className: "custom-more-box" });
+  const copyP = createEl("p", { text: "复制" });
+  const moveP = createEl("p", { text: "移动" });
+  copyP.getBoundingClientRect = () => ({ left: 520, top: 200, width: 140, height: 0.5 });
+  moveP.getBoundingClientRect = () => ({ left: 520, top: 200.5, width: 140, height: 0.5 });
+  compactMenu.appendChild(copyP);
+  compactMenu.appendChild(moveP);
+  body.appendChild(compactMenu);
+
+  const horizontalBar = createEl("div", { className: "custom-horizontal-bar" });
+  const hCopy = createEl("span", { text: "复制" });
+  const hMove = createEl("span", { text: "移动" });
+  hCopy.getBoundingClientRect = () => ({ left: 300, top: 20, width: 56, height: 28 });
+  hMove.getBoundingClientRect = () => ({ left: 370, top: 20, width: 56, height: 28 });
+  horizontalBar.appendChild(hCopy);
+  horizontalBar.appendChild(hMove);
+  body.appendChild(horizontalBar);
+
+  mutationCb([{ target: body, addedNodes: [compactMenu, horizontalBar], removedNodes: [] }]);
+  await new Promise((r) => setTimeout(r, 25));
+
+  assert.equal(compactMenu.querySelectorAll(".pd-inline-menu-item").length, 1);
+  assert.equal(horizontalBar.querySelectorAll(".pd-inline-menu-item").length, 0);
+
+  // Clean up timers cleanly
+  storageListeners[0]({ enabled: { oldValue: true, newValue: false } }, "local");
 });
 
