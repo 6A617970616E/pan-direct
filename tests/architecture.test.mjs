@@ -709,3 +709,465 @@ test("core/ui/content-drawer hides floating FAB and open drawer immediately when
   assert.equal(mountedRoot.classList.contains("pd-hidden"), true);
   assert.equal(childMap["#pd-drawer"].classList.contains("pd-hidden"), true);
 });
+
+test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD buttons, routes clicks, shows toast, and cleans up on OFF", async () => {
+  const drawerCode = fs.readFileSync(
+    path.join(REPO_ROOT, "core", "ui", "content-drawer.js"),
+    "utf8"
+  );
+  const baiduContentCode = fs.readFileSync(
+    path.join(REPO_ROOT, "providers", "official", "baidu", "content.js"),
+    "utf8"
+  );
+
+  // Compact DOM tree helper supporting selector matching, closest, insertAdjacentElement, remove, events
+  function createClassList(el) {
+    const getSet = () =>
+      new Set(String(el._className || "").split(/\s+/).filter(Boolean));
+    const sync = (set) => {
+      el._className = Array.from(set).join(" ");
+    };
+    return {
+      add: (...cls) => {
+        const s = getSet();
+        for (const c of cls) if (c) s.add(c);
+        sync(s);
+      },
+      remove: (...cls) => {
+        const s = getSet();
+        for (const c of cls) s.delete(c);
+        sync(s);
+      },
+      contains: (c) => getSet().has(c),
+      toggle: (c, force) => {
+        const s = getSet();
+        const shouldHave = force === undefined ? !s.has(c) : Boolean(force);
+        if (shouldHave) s.add(c);
+        else s.delete(c);
+        sync(s);
+        return shouldHave;
+      },
+    };
+  }
+
+  function matchesSimple(el, sel) {
+    const trimmed = sel.trim();
+    if (!trimmed) return false;
+    if (trimmed.includes(" ")) {
+      const parts = trimmed.split(/\s+/);
+      if (!matchesSimple(el, parts[parts.length - 1])) return false;
+      let cur = el.parentElement;
+      let idx = parts.length - 2;
+      while (cur && idx >= 0) {
+        if (matchesSimple(cur, parts[idx])) idx--;
+        cur = cur.parentElement;
+      }
+      return idx < 0;
+    }
+
+    let rest = trimmed;
+    const tagMatch = rest.match(/^[a-zA-Z0-9_-]+/);
+    if (tagMatch) {
+      if ((el.tagName || "").toLowerCase() !== tagMatch[0].toLowerCase()) {
+        return false;
+      }
+      rest = rest.slice(tagMatch[0].length);
+    }
+
+    while (rest.length > 0) {
+      if (rest.startsWith("#")) {
+        const m = rest.match(/^#([a-zA-Z0-9_-]+)/);
+        if (!m || el.id !== m[1]) return false;
+        rest = rest.slice(m[0].length);
+      } else if (rest.startsWith(".")) {
+        const m = rest.match(/^\.([a-zA-Z0-9_-]+)/);
+        if (!m || !el.classList.contains(m[1])) return false;
+        rest = rest.slice(m[0].length);
+      } else if (rest.startsWith("[")) {
+        const m = rest.match(
+          /^\[([a-zA-Z0-9_:\\-]+)(?:(\*?=)['"]?([^'"\]]*)['"]?)?\]/
+        );
+        if (!m) return false;
+        const attrName = m[1].replace(/\\/g, "");
+        const op = m[2];
+        const expected = m[3];
+        const actual =
+          attrName === "class"
+            ? el.className
+            : el.getAttribute(attrName);
+        if (!op) {
+          if (actual === null || actual === undefined) return false;
+        } else if (op === "=") {
+          if (actual !== expected) return false;
+        } else if (op === "*=") {
+          if (!String(actual || "").includes(expected)) return false;
+        }
+        rest = rest.slice(m[0].length);
+      } else if (rest.startsWith(":checked")) {
+        if (!el.checked) return false;
+        rest = rest.slice(":checked".length);
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function matchesSelector(el, selectorList) {
+    return selectorList
+      .split(",")
+      .some((part) => matchesSimple(el, part));
+  }
+
+  function createEl(tag, { id = "", className = "", attrs = {}, text = "" } = {}) {
+    const attrMap = new Map(Object.entries(attrs));
+    const listeners = new Map();
+    const el = {
+      nodeType: 1,
+      tagName: tag.toUpperCase(),
+      id,
+      _className: className,
+      get className() {
+        return this._className;
+      },
+      set className(v) {
+        this._className = String(v || "");
+      },
+      style: {},
+      hidden: false,
+      checked: false,
+      value: attrs.value || "",
+      parentElement: null,
+      get parentNode() {
+        return this.parentElement;
+      },
+      children: [],
+      dataset: {},
+      _text: text,
+      get textContent() {
+        if (this.children.length === 0) return this._text;
+        return this._text + this.children.map((c) => c.textContent).join("");
+      },
+      set textContent(v) {
+        this._text = String(v ?? "");
+        this.children = [];
+      },
+      get title() {
+        return attrMap.get("title") || "";
+      },
+      set title(v) {
+        attrMap.set("title", String(v ?? ""));
+      },
+      get isConnected() {
+        let cur = this;
+        while (cur) {
+          if (cur === doc.body) return true;
+          cur = cur.parentElement;
+        }
+        return false;
+      },
+      get nextElementSibling() {
+        if (!this.parentElement) return null;
+        const idx = this.parentElement.children.indexOf(this);
+        return idx >= 0 ? this.parentElement.children[idx + 1] || null : null;
+      },
+      get previousElementSibling() {
+        if (!this.parentElement) return null;
+        const idx = this.parentElement.children.indexOf(this);
+        return idx > 0 ? this.parentElement.children[idx - 1] || null : null;
+      },
+      getAttribute: (k) => (attrMap.has(k) ? attrMap.get(k) : null),
+      setAttribute: (k, v) => {
+        attrMap.set(k, String(v));
+        if (k === "id") el.id = String(v);
+        if (k === "class") el._className = String(v);
+      },
+      appendChild(child) {
+        child.parentElement = this;
+        this.children.push(child);
+        return child;
+      },
+      insertAdjacentElement(pos, node) {
+        const parent = this.parentElement;
+        if (!parent) return null;
+        const idx = parent.children.indexOf(this);
+        if (idx === -1) return null;
+        node.parentElement = parent;
+        parent.children.splice(pos === "beforebegin" ? idx : idx + 1, 0, node);
+        return node;
+      },
+      remove() {
+        if (!this.parentElement) return;
+        const idx = this.parentElement.children.indexOf(this);
+        if (idx !== -1) this.parentElement.children.splice(idx, 1);
+        this.parentElement = null;
+      },
+      closest(sel) {
+        let cur = this;
+        while (cur) {
+          if (matchesSelector(cur, sel)) return cur;
+          cur = cur.parentElement;
+        }
+        return null;
+      },
+      querySelectorAll(sel) {
+        const out = [];
+        const walk = (node) => {
+          for (const c of node.children) {
+            if (matchesSelector(c, sel)) out.push(c);
+            walk(c);
+          }
+        };
+        walk(this);
+        return out;
+      },
+      querySelector(sel) {
+        return this.querySelectorAll(sel)[0] || null;
+      },
+      addEventListener(type, fn) {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(fn);
+      },
+      async trigger(type, event = {}) {
+        const fns = listeners.get(type) || [];
+        for (const fn of fns) {
+          await fn({
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            stopImmediatePropagation: () => {},
+            ...event,
+          });
+        }
+      },
+    };
+    el.classList = createClassList(el);
+    return el;
+  }
+
+  // Build realistic Baidu /disk/main DOM
+  const body = createEl("body");
+  const doc = {
+    body,
+    createElement: (tag) => {
+      const el = createEl(tag);
+      // Support drawer root innerHTML child lookups
+      const origDesc = Object.getOwnPropertyDescriptor(el, "innerHTML");
+      Object.defineProperty(el, "innerHTML", {
+        get: () => el._html || "",
+        set: (html) => {
+          el._html = String(html || "");
+          if (el.id === "pandirect-root") {
+            el.children = [];
+            const toast = createEl("div", { id: "pd-toast", className: "pd-toast pd-hidden" });
+            toast.appendChild(createEl("span", { id: "pd-toast-text" }));
+            toast.appendChild(createEl("button", { id: "pd-toast-close", className: "pd-toast-close" }));
+            el.appendChild(toast);
+            el.appendChild(createEl("button", { id: "pd-fab" }));
+            const drawer = createEl("div", { id: "pd-drawer", className: "pd-hidden" });
+            drawer.appendChild(createEl("button", { id: "pd-close" }));
+            drawer.appendChild(createEl("div", { id: "pd-current-path" }));
+            const rBrowser = createEl("input", { attrs: { type: "radio", name: "pd-mode", value: "browser" } });
+            rBrowser.checked = true;
+            const rAria2 = createEl("input", { attrs: { type: "radio", name: "pd-mode", value: "aria2" } });
+            drawer.appendChild(rBrowser);
+            drawer.appendChild(rAria2);
+            drawer.appendChild(createEl("div", { id: "pd-notice", className: "pd-notice pd-hidden" }));
+            drawer.appendChild(createEl("div", { id: "pd-list" }));
+            drawer.appendChild(createEl("button", { id: "pd-up", className: "pd-hidden" }));
+            drawer.appendChild(createEl("button", { id: "pd-refresh" }));
+            drawer.appendChild(createEl("button", { id: "pd-dl-dir" }));
+            drawer.appendChild(createEl("button", { id: "pd-dl-selected" }));
+            el.appendChild(drawer);
+          }
+        },
+        configurable: true,
+      });
+      return el;
+    },
+    querySelectorAll: (sel) => body.querySelectorAll(sel),
+    querySelector: (sel) => body.querySelector(sel),
+  };
+
+  // Top header promo buttons that MUST be ignored
+  const header = createEl("div", { className: "wp-s-header" });
+  header.appendChild(createEl("button", { className: "u-button", text: "下载客户端" }));
+  header.appendChild(createEl("button", { className: "u-button", text: "离线下载" }));
+  body.appendChild(header);
+
+  // Top selection toolbar with native "下载" button
+  const toolbarGroup = createEl("div", { className: "wp-s-agile-tool-bar wp-s-agile-tool-bar__h-group" });
+  const toolbarWrap = createEl("div", { className: "wp-s-agile-tool-bar__h-action" });
+  const nativeToolbarDl = createEl("button", { className: "u-button", text: "下载" });
+  toolbarWrap.appendChild(nativeToolbarDl);
+  toolbarGroup.appendChild(toolbarWrap);
+  body.appendChild(toolbarGroup);
+
+  // File table with 1 file row (selected) and 1 folder row
+  const table = createEl("table");
+  const tbody = createEl("tbody");
+
+  const fileRow = createEl("tr", { className: "wp-s-pan-table__body-row selected" });
+  const fileTd = createEl("td");
+  fileTd.appendChild(
+    createEl("a", {
+      className: "wp-s-pan-list__file-name-title-text",
+      attrs: { title: "F3GOTYCNv2.3.exe" },
+      text: "F3GOTYCNv2.3.exe",
+    })
+  );
+  const fileActions = createEl("div", { className: "wp-s-pan-table__body-row-action" });
+  fileActions.appendChild(createEl("span", { attrs: { title: "分享" } }));
+  const nativeRowDl = createEl("span", { attrs: { title: "下载" } });
+  nativeRowDl.appendChild(createEl("i", { className: "u-icon-download" }));
+  fileActions.appendChild(nativeRowDl);
+  fileActions.appendChild(createEl("span", { attrs: { title: "删除" } }));
+  fileTd.appendChild(fileActions);
+  fileRow.appendChild(fileTd);
+
+  const folderRow = createEl("tr", { className: "wp-s-pan-table__body-row" });
+  const folderTd = createEl("td");
+  folderTd.appendChild(createEl("span", { className: "u-icon-folder" }));
+  folderTd.appendChild(
+    createEl("a", {
+      className: "wp-s-pan-list__file-name-title-text",
+      attrs: { title: "Games" },
+      text: "Games",
+    })
+  );
+  const folderActions = createEl("div", { className: "wp-s-pan-table__body-row-action" });
+  folderActions.appendChild(createEl("i", { className: "u-icon-download", attrs: { title: "下载" } }));
+  folderTd.appendChild(folderActions);
+  folderRow.appendChild(folderTd);
+
+  tbody.appendChild(fileRow);
+  tbody.appendChild(folderRow);
+  table.appendChild(tbody);
+  body.appendChild(table);
+
+  const sentMessages = [];
+  const storageListeners = [];
+  let mutationCb = null;
+
+  class MockMutationObserver {
+    constructor(cb) {
+      mutationCb = cb;
+      this.disconnected = false;
+    }
+    observe() {}
+    disconnect() {
+      this.disconnected = true;
+    }
+  }
+
+  const fakeChrome = {
+    storage: {
+      local: {
+        get: async () => ({ enabled: true, downloadMode: "aria2" }),
+      },
+      onChanged: {
+        addListener: (fn) => storageListeners.push(fn),
+      },
+    },
+    runtime: {
+      sendMessage: (msg, cb) => {
+        sentMessages.push(msg);
+        if (msg.type === "PANDIRECT_LIST_FILES") {
+          cb({
+            ok: true,
+            dir: "/Downloads",
+            displayPath: "/Downloads",
+            files: [
+              { id: "777001", fsId: "777001", name: "F3GOTYCNv2.3.exe", isdir: false, size: 1024, path: "/Downloads/F3GOTYCNv2.3.exe" },
+              { id: "777002", fsId: "777002", name: "Games", isdir: true, size: 0, path: "/Downloads/Games" },
+            ],
+          });
+          return;
+        }
+        if (msg.type === "PANDIRECT_DOWNLOAD_ITEMS") {
+          cb({ ok: true, results: msg.itemIds.map((id) => ({ ok: true, id })) });
+          return;
+        }
+        if (msg.type === "PANDIRECT_OPEN_FOLDER_DOWNLOADER") {
+          cb({ ok: true });
+          return;
+        }
+        cb({ ok: true, enabled: true, downloadMode: "aria2" });
+      },
+    },
+  };
+
+  const fakeWindow = {
+    location: { hash: "#/index?category=all&path=%2FDownloads", search: "" },
+    addEventListener: () => {},
+  };
+
+  const sandbox = {
+    window: fakeWindow,
+    document: doc,
+    chrome: fakeChrome,
+    MutationObserver: MockMutationObserver,
+    URLSearchParams,
+    setTimeout,
+    clearTimeout,
+  };
+
+  vm.runInNewContext(drawerCode, sandbox);
+  vm.runInNewContext(baiduContentCode, sandbox);
+
+  await new Promise((r) => setTimeout(r, 10));
+
+  // 1. Injected exactly 2 row PD buttons (1 per row) + 1 toolbar PD button (none on 下载客户端/离线下载)
+  const rowBtns = body.querySelectorAll(".pd-inline-row-btn");
+  const toolbarBtns = body.querySelectorAll(".pd-inline-toolbar-btn");
+  assert.equal(rowBtns.length, 2);
+  assert.equal(toolbarBtns.length, 1);
+  assert.equal(header.querySelectorAll(".pd-inline-btn").length, 0);
+  // Row PD button inserted right after native download icon inside fileActions (not escaping hover bar)
+  assert.equal(nativeRowDl.nextElementSibling, rowBtns[0]);
+  assert.equal(rowBtns[0].parentElement, fileActions);
+  // Tooltip reflects synced Aria2 mode without ever opening the drawer
+  assert.ok(rowBtns[0].title.includes("推送 Aria2"));
+  // Single-icon folder row button stays INSIDE folderActions
+  assert.equal(rowBtns[1].parentElement, folderActions);
+
+  // 2. Repeated mutation does NOT duplicate buttons
+  mutationCb([{ target: tbody, addedNodes: [fileRow], removedNodes: [] }]);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(body.querySelectorAll(".pd-inline-row-btn").length, 2);
+  assert.equal(body.querySelectorAll(".pd-inline-toolbar-btn").length, 1);
+
+  // 3. Clicking file row PD button lazily loads current dir and downloads via Aria2 + shows floating toast
+  await rowBtns[0].trigger("click");
+  const listCalls = sentMessages.filter((m) => m.type === "PANDIRECT_LIST_FILES");
+  const dlCalls = sentMessages.filter((m) => m.type === "PANDIRECT_DOWNLOAD_ITEMS");
+  assert.equal(listCalls.length, 1);
+  assert.equal(listCalls[0].dir, "/Downloads");
+  assert.equal(dlCalls.length, 1);
+  assert.deepEqual(Array.from(dlCalls[0].itemIds), ["777001"]);
+  assert.equal(dlCalls[0].mode, "aria2");
+  const toastEl = body.querySelector("#pd-toast");
+  assert.equal(toastEl.classList.contains("pd-hidden"), false);
+  assert.ok(body.querySelector("#pd-toast-text").textContent.includes("Aria2"));
+
+  // 4. Clicking folder row PD button reuses fresh dir cache (no 2nd LIST_FILES) and opens folder downloader
+  await rowBtns[1].trigger("click");
+  assert.equal(sentMessages.filter((m) => m.type === "PANDIRECT_LIST_FILES").length, 1);
+  const folderCalls = sentMessages.filter((m) => m.type === "PANDIRECT_OPEN_FOLDER_DOWNLOADER");
+  assert.equal(folderCalls.length, 1);
+  assert.equal(folderCalls[0].path, "/Downloads/Games");
+  assert.equal(folderCalls[0].mode, "aria2");
+
+  // 5. Clicking toolbar "PD 直下" button downloads checked row items
+  await toolbarBtns[0].trigger("click");
+  assert.equal(sentMessages.filter((m) => m.type === "PANDIRECT_DOWNLOAD_ITEMS").length, 2);
+
+  // 6. Toggling extension OFF removes ALL inline buttons immediately; toggling ON restores them
+  storageListeners[0]({ enabled: { oldValue: true, newValue: false } }, "local");
+  assert.equal(body.querySelectorAll(".pd-inline-btn").length, 0);
+  assert.equal(toastEl.classList.contains("pd-hidden"), true);
+
+  storageListeners[0]({ enabled: { oldValue: false, newValue: true } }, "local");
+  assert.equal(body.querySelectorAll(".pd-inline-row-btn").length, 2);
+  assert.equal(body.querySelectorAll(".pd-inline-toolbar-btn").length, 1);
+});
+

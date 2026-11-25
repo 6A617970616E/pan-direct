@@ -675,6 +675,83 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
       names: ["demo.mp4"],
     }
   );
+
+  // Verify Quark inlineActions config & idIsFolderPath
+  assert.equal(mountedAdapter.idIsFolderPath, true);
+  assert.equal(typeof mountedAdapter.inlineActions?.findRowAnchors, "function");
+  assert.equal(typeof mountedAdapter.inlineActions?.findToolbarAnchors, "function");
+
+  // Build minimal Quark AntD row + toolbar DOM to verify anchor matching & promo exclusion
+  const mockToolbarContainer = { tagName: "DIV" };
+  const mockPromoContainer = { tagName: "DIV" };
+  const mockRowActionBar = { tagName: "DIV", parentElement: null };
+  const mockRow = {
+    tagName: "TR",
+    className: "ant-table-row",
+    getAttribute: (k) => (k === "data-row-key" ? "fid_quark_9988" : null),
+    dataset: {},
+    closest: (sel) => (sel.includes("tr.ant-table-row") ? mockRow : null),
+    querySelector: (sel) => {
+      if (sel.includes(".filename-text")) {
+        return { getAttribute: () => "guide.pdf", textContent: "guide.pdf" };
+      }
+      return null;
+    },
+  };
+  mockRowActionBar.parentElement = mockRow;
+
+  const mockRowDlBtn = {
+    tagName: "SPAN",
+    className: "icon-download",
+    textContent: "",
+    style: {},
+    hidden: false,
+    parentElement: mockRowActionBar,
+    getAttribute: (k) => (k === "title" ? "下载" : null),
+    closest: (sel) => (sel.includes("tr.ant-table-row") ? mockRow : null),
+  };
+
+  const mockToolbarDlBtn = {
+    tagName: "BUTTON",
+    className: "ant-btn",
+    textContent: "下载",
+    style: {},
+    hidden: false,
+    parentElement: mockToolbarContainer,
+    getAttribute: () => null,
+    closest: () => null,
+  };
+
+  const mockClientDlBtn = {
+    tagName: "BUTTON",
+    className: "ant-btn",
+    textContent: "客户端下载",
+    style: {},
+    hidden: false,
+    parentElement: mockPromoContainer,
+    getAttribute: () => null,
+    closest: () => null,
+  };
+
+  const mockQuarkDoc = {
+    querySelectorAll: (sel) => {
+      if (sel.includes(".icon-download")) return [mockRowDlBtn, mockClientDlBtn];
+      return [mockToolbarDlBtn, mockClientDlBtn];
+    },
+  };
+
+  const rowAnchors = mountedAdapter.inlineActions.findRowAnchors(mockQuarkDoc);
+  assert.equal(rowAnchors.length, 1);
+  assert.equal(rowAnchors[0].anchor, mockRowDlBtn);
+  assert.deepEqual(JSON.parse(JSON.stringify(rowAnchors[0].getItem())), {
+    id: "fid_quark_9988",
+    name: "guide.pdf",
+    isdir: null,
+  });
+
+  const toolbarAnchors = mountedAdapter.inlineActions.findToolbarAnchors(mockQuarkDoc);
+  assert.equal(toolbarAnchors.length, 1);
+  assert.equal(toolbarAnchors[0].anchor, mockToolbarDlBtn);
 });
 
 test("Real repo dual-artifact build keeps Quark and cookies 100% out of store.zip and wires them into community.zip", async () => {

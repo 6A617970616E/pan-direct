@@ -75,6 +75,11 @@
       adapter.fallbackHint || "读取失败。如果是应用沙盒限制，可尝试点击下方进入专属目录：";
     const emptyErrorHint =
       adapter.emptyErrorHint || "读取目录失败，请确认授权或登录状态后重试。";
+    const idIsFolderPath = Boolean(adapter.idIsFolderPath);
+    const inlineActions =
+      adapter.inlineActions && typeof adapter.inlineActions === "object"
+        ? adapter.inlineActions
+        : null;
 
     function normalizeDirTarget(raw) {
       if (raw && typeof raw === "object") {
@@ -88,22 +93,25 @@
       return { dir, displayPath };
     }
 
+    let svgUidCounter = 0;
+
     function renderBrandIconSvg(uid) {
+      const safeUid = uid || `inl_${++svgUidCounter}`;
       return `
         <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <defs>
-            <linearGradient id="pdBg_${uid}" x1="10" y1="8" x2="118" y2="122" gradientUnits="userSpaceOnUse">
+            <linearGradient id="pdBg_${safeUid}" x1="10" y1="8" x2="118" y2="122" gradientUnits="userSpaceOnUse">
               <stop offset="0%" stop-color="#1E3A8A" />
               <stop offset="50%" stop-color="#2563EB" />
               <stop offset="100%" stop-color="#0EA5E9" />
             </linearGradient>
-            <linearGradient id="pdLoop_${uid}" x1="48" y1="26" x2="98" y2="74" gradientUnits="userSpaceOnUse">
+            <linearGradient id="pdLoop_${safeUid}" x1="48" y1="26" x2="98" y2="74" gradientUnits="userSpaceOnUse">
               <stop offset="0%" stop-color="#BAE6FD" />
               <stop offset="100%" stop-color="#38BDF8" />
             </linearGradient>
           </defs>
-          <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#pdBg_${uid})" />
-          <path d="M48 31 H74 C88.5 31 98 40.2 98 52.5 C98 64.8 88.5 74 74 74 H64" fill="none" stroke="url(#pdLoop_${uid})" stroke-width="14.5" stroke-linecap="round" />
+          <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#pdBg_${safeUid})" />
+          <path d="M48 31 H74 C88.5 31 98 40.2 98 52.5 C98 64.8 88.5 74 74 74 H64" fill="none" stroke="url(#pdLoop_${safeUid})" stroke-width="14.5" stroke-linecap="round" />
           <path d="M48 31 V93" fill="none" stroke="#FFFFFF" stroke-width="14.5" stroke-linecap="round" />
           <path d="M29 77 L48 96 L67 77" fill="none" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
@@ -114,6 +122,11 @@
     root.id = "pandirect-root";
     root.className = "pd-hidden";
     root.innerHTML = `
+      <div id="pd-toast" class="pd-toast pd-hidden" role="status" aria-live="polite">
+        <span id="pd-toast-text"></span>
+        <button id="pd-toast-close" class="pd-toast-close" type="button" title="关闭">✕</button>
+      </div>
+
       <button id="pd-fab" title="打开 PanDirect 直链下载面板">
         <span class="pd-fab-badge">${renderBrandIconSvg("fab")}</span>
         <span>PanDirect 直下</span>
@@ -160,6 +173,9 @@
 
     document.body.appendChild(root);
 
+    const toastEl = root.querySelector("#pd-toast");
+    const toastTextEl = root.querySelector("#pd-toast-text");
+    const toastCloseBtn = root.querySelector("#pd-toast-close");
     const fab = root.querySelector("#pd-fab");
     const drawer = root.querySelector("#pd-drawer");
     const closeBtn = root.querySelector("#pd-close");
@@ -172,40 +188,187 @@
     const dlSelectedBtn = root.querySelector("#pd-dl-selected");
 
     let cachedFiles = [];
+    let cachedDir = null;
+    let cachedDisplayPath = "/";
+    let cachedAt = 0;
+    let pendingListPromise = null;
+    let pendingListDir = null;
+
     let activeDir = rootDir;
     let activeDisplayPath = "/";
     let activeParentDir = null;
     let navStack = [];
 
+    let isEnabled = false;
+    let currentDownloadMode = "browser";
+    let modeSynced = false;
+    let toastTimer = null;
+
+    const DIR_CACHE_TTL_MS = 30000;
+    const injectedEntries = new Set();
+    const anchorToEntry = new Map();
+    let inlineObserver = null;
+    let inlineScanScheduled = false;
+
+    function getModeLabel(mode = getSelectedMode()) {
+      return mode === "aria2" ? "推送 Aria2" : "浏览器直下";
+    }
+
+    function getInlineTooltip(kind) {
+      const modeLabel = getModeLabel();
+      if (kind === "toolbar") {
+        return `PanDirect 批量直下已勾选（${modeLabel}）`;
+      }
+      return `PanDirect 一键直下（${modeLabel}）`;
+    }
+
+    function refreshInlineButtonTooltips() {
+      for (const entry of injectedEntries) {
+        if (entry.btn) {
+          entry.btn.title = getInlineTooltip(entry.kind);
+        }
+      }
+    }
+
+    function applyDownloadMode(mode) {
+      const normalized = mode === "aria2" ? "aria2" : "browser";
+      currentDownloadMode = normalized;
+      modeSynced = true;
+      root.querySelectorAll('input[name="pd-mode"]').forEach((radio) => {
+        radio.checked = radio.value === normalized;
+      });
+      refreshInlineButtonTooltips();
+    }
+
     function getSelectedMode() {
       const checked = root.querySelector('input[name="pd-mode"]:checked');
-      return checked ? checked.value : "browser";
+      return checked ? checked.value : currentDownloadMode;
+    }
+
+    function hideToast() {
+      if (toastTimer && typeof clearTimeout === "function") {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+      }
+      if (toastEl) {
+        toastEl.className = "pd-toast pd-hidden";
+      }
+    }
+
+    function showToast(text, type = "info") {
+      if (!toastEl || !toastTextEl || !isEnabled) return;
+      if (toastTimer && typeof clearTimeout === "function") {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+      }
+      toastTextEl.textContent = text;
+      toastEl.className = `pd-toast pd-toast-${type}`;
+      const duration = type === "error" ? 6500 : type === "success" ? 3600 : 5000;
+      toastTimer = setTimeout(() => {
+        hideToast();
+      }, duration);
     }
 
     function showNotice(text, type = "info") {
       noticeEl.textContent = text;
       noticeEl.className = `pd-notice pd-notice-${type}`;
+      if (drawer.classList.contains("pd-hidden")) {
+        showToast(text, type);
+      }
     }
 
     function hideNotice() {
       noticeEl.className = "pd-notice pd-hidden";
     }
 
+    if (toastCloseBtn) {
+      toastCloseBtn.addEventListener("click", () => hideToast());
+    }
+
     async function syncDefaultMode() {
       try {
         const status = await sendMessage({ type: "PANDIRECT_GET_STATUS" });
         if (status?.ok) {
-          const radio = root.querySelector(
-            `input[name="pd-mode"][value="${status.downloadMode || "browser"}"]`
-          );
-          if (radio) radio.checked = true;
+          applyDownloadMode(status.downloadMode || "browser");
+          return;
         }
       } catch {
         // ignore
       }
+      modeSynced = true;
+    }
+
+    async function ensureModeSynced() {
+      if (!modeSynced) {
+        await syncDefaultMode();
+      }
+    }
+
+    async function ensureDirFilesLoaded({ forceRefresh = false } = {}) {
+      const target = normalizeDirTarget(getCurrentDir());
+      const cacheFresh =
+        !forceRefresh &&
+        cachedDir === target.dir &&
+        cachedAt > 0 &&
+        Date.now() - cachedAt < DIR_CACHE_TTL_MS;
+
+      if (cacheFresh) {
+        return {
+          ok: true,
+          dir: cachedDir,
+          displayPath: cachedDisplayPath,
+          files: cachedFiles,
+          fromCache: true,
+        };
+      }
+
+      if (!forceRefresh && pendingListPromise && pendingListDir === target.dir) {
+        return pendingListPromise;
+      }
+
+      pendingListDir = target.dir;
+      pendingListPromise = (async () => {
+        try {
+          const res = await sendMessage({
+            type: "PANDIRECT_LIST_FILES",
+            provider: providerId,
+            dir: target.dir,
+          });
+          if (!res?.ok) {
+            return { ok: false, error: res?.error || "读取目录失败" };
+          }
+          cachedDir = res.dir || target.dir;
+          cachedDisplayPath =
+            res.displayPath &&
+            (target.displayPath === target.dir || target.displayPath === "/")
+              ? res.displayPath
+              : target.displayPath;
+          cachedFiles = res.files || [];
+          cachedAt = Date.now();
+          activeDir = cachedDir;
+          activeDisplayPath = cachedDisplayPath;
+          return {
+            ok: true,
+            dir: cachedDir,
+            displayPath: cachedDisplayPath,
+            files: cachedFiles,
+            fromCache: false,
+          };
+        } catch (err) {
+          return { ok: false, error: err?.message || "请求失败" };
+        } finally {
+          if (pendingListDir === target.dir) {
+            pendingListPromise = null;
+            pendingListDir = null;
+          }
+        }
+      })();
+
+      return pendingListPromise;
     }
 
     async function openFolderDownloader(folderPath, folderLabel) {
+      await ensureModeSynced();
       const mode = getSelectedMode();
       try {
         const res = await sendMessage({
@@ -217,6 +380,11 @@
         });
         if (!res?.ok) {
           showNotice(res?.error || "打开文件夹下载器失败", "error");
+        } else if (drawer.classList.contains("pd-hidden")) {
+          showToast(
+            `已打开「${folderLabel || folderPath}」文件夹流式下载器`,
+            "success"
+          );
         }
       } catch (err) {
         showNotice(err?.message || "调用失败", "error");
@@ -224,6 +392,7 @@
     }
 
     async function triggerDownloadItems(itemIds) {
+      await ensureModeSynced();
       const mode = getSelectedMode();
       showNotice(
         mode === "aria2"
@@ -276,6 +445,151 @@
       } catch (err) {
         showNotice(err?.message || "下载调用异常", "error");
       }
+    }
+
+    function matchSingleItem(files, item) {
+      if (!Array.isArray(files) || files.length === 0 || !item) return null;
+      if (item.id) {
+        const byId = files.find(
+          (f) => String(f.id || f.fsId || "") === String(item.id)
+        );
+        if (byId) return byId;
+      }
+      if (item.name) {
+        const byName = files.find((f) => f.name === item.name);
+        if (byName) return byName;
+      }
+      return null;
+    }
+
+    async function handleInlineRowDownload(itemOrGetter) {
+      await ensureModeSynced();
+      const rawItem =
+        typeof itemOrGetter === "function" ? itemOrGetter() : itemOrGetter;
+      const item = rawItem && typeof rawItem === "object" ? rawItem : {};
+
+      if (!item.id && !item.name) {
+        showNotice(
+          "未能识别当前行文件，请点击右下角「PanDirect 直下」面板操作。",
+          "info"
+        );
+        return;
+      }
+
+      let listRes = await ensureDirFilesLoaded();
+      let matched = listRes.ok ? matchSingleItem(listRes.files, item) : null;
+
+      if (!matched && listRes.ok && listRes.fromCache) {
+        listRes = await ensureDirFilesLoaded({ forceRefresh: true });
+        matched = listRes.ok ? matchSingleItem(listRes.files, item) : null;
+      }
+
+      if (matched) {
+        if (matched.isdir) {
+          const folderLabel =
+            matched.displayPath ||
+            joinDisplayPath(listRes.displayPath || activeDisplayPath, matched.name);
+          await openFolderDownloader(matched.path, folderLabel);
+        } else {
+          await triggerDownloadItems([matched.id || matched.fsId]);
+        }
+        return;
+      }
+
+      if (item.id) {
+        if (item.isdir === true) {
+          if (idIsFolderPath) {
+            const label = item.name ? `/${item.name}` : "/";
+            await openFolderDownloader(item.id, label);
+          } else {
+            showNotice(
+              "当前视图未能解析该文件夹路径，请进入所在目录或打开右下角「PanDirect 直下」面板下载。",
+              "info"
+            );
+          }
+          return;
+        }
+        await triggerDownloadItems([item.id]);
+        return;
+      }
+
+      showNotice(
+        listRes?.error ||
+          "未在当前目录匹配到该文件，请刷新页面或点击右下角「PanDirect 直下」面板下载。",
+        "error"
+      );
+    }
+
+    async function handleDownloadSelected() {
+      await ensureModeSynced();
+      const domSel = getSelectedItemsFromDom();
+      const domIds = domSel.ids || domSel.fsIds || [];
+      const domNames = domSel.names || [];
+
+      if (domIds.length === 0 && domNames.length === 0) {
+        showNotice(
+          "未检测到页面已勾选的文件，请先在网盘列表勾选文件，或直接点击文件行旁的 PanDirect 快捷图标。",
+          "info"
+        );
+        return;
+      }
+
+      const idSet = new Set(domIds.map(String));
+      const nameSet = new Set(domNames);
+
+      let listRes = await ensureDirFilesLoaded();
+      let files = listRes.ok ? listRes.files : cachedFiles;
+      let displayBase = listRes.ok ? listRes.displayPath : activeDisplayPath;
+
+      let matchedItems = files.filter((f) => {
+        const itemId = String(f.id || f.fsId || "");
+        return (itemId && idSet.has(itemId)) || nameSet.has(f.name);
+      });
+
+      if (matchedItems.length === 0 && listRes.ok && listRes.fromCache) {
+        listRes = await ensureDirFilesLoaded({ forceRefresh: true });
+        files = listRes.ok ? listRes.files : cachedFiles;
+        displayBase = listRes.ok ? listRes.displayPath : activeDisplayPath;
+        matchedItems = files.filter((f) => {
+          const itemId = String(f.id || f.fsId || "");
+          return (itemId && idSet.has(itemId)) || nameSet.has(f.name);
+        });
+      }
+
+      const selectedFolders = matchedItems.filter((f) => f.isdir);
+      const selectedFiles = matchedItems.filter((f) => !f.isdir);
+
+      if (selectedFolders.length === 1 && selectedFiles.length === 0) {
+        const folder = selectedFolders[0];
+        const folderLabel =
+          folder.displayPath || joinDisplayPath(displayBase, folder.name);
+        await openFolderDownloader(folder.path, folderLabel);
+        return;
+      }
+
+      if (selectedFolders.length > 0 && selectedFiles.length === 0) {
+        showNotice(
+          "勾选了多个文件夹，请点击对应文件夹旁的 PanDirect 快捷图标或抽屉中的「下整夹」。",
+          "info"
+        );
+        return;
+      }
+
+      let targetIds = selectedFiles.map((f) => f.id || f.fsId);
+      if (targetIds.length === 0 && domIds.length > 0) {
+        targetIds = domIds;
+      }
+
+      if (targetIds.length === 0) {
+        showNotice(
+          listRes?.error ||
+            "未在当前目录匹配到已勾选的文件，请刷新或使用右下角「PanDirect 直下」面板。",
+          "info"
+        );
+        return;
+      }
+
+      await triggerDownloadItems(targetIds);
     }
 
     function renderFileList(files) {
@@ -376,6 +690,8 @@
 
         if (!res?.ok) {
           cachedFiles = [];
+          cachedDir = null;
+          cachedAt = 0;
           showNotice(res?.error || "读取目录失败", "error");
           if (fallbackDir) {
             listEl.innerHTML = `
@@ -419,16 +735,255 @@
         upBtn.classList.toggle("pd-hidden", isRoot && navStack.length === 0);
 
         cachedFiles = res.files || [];
+        cachedDir = activeDir;
+        cachedDisplayPath = activeDisplayPath;
+        cachedAt = Date.now();
         renderFileList(cachedFiles);
       } catch (err) {
         showNotice(err?.message || "请求失败", "error");
       }
     }
 
+    function insertAdjacentCompat(anchor, position, el) {
+      if (typeof anchor.insertAdjacentElement === "function") {
+        anchor.insertAdjacentElement(position, el);
+        return true;
+      }
+      const parent = anchor.parentElement || anchor.parentNode;
+      if (!parent || typeof parent.insertBefore !== "function") return false;
+      if (position === "beforebegin") {
+        parent.insertBefore(el, anchor);
+      } else {
+        parent.insertBefore(el, anchor.nextSibling || null);
+      }
+      return true;
+    }
+
+    function removeEntry(entry) {
+      if (entry.btn && typeof entry.btn.remove === "function") {
+        entry.btn.remove();
+      } else if (entry.btn?.parentNode?.removeChild) {
+        entry.btn.parentNode.removeChild(entry.btn);
+      }
+      if (entry.anchor) {
+        anchorToEntry.delete(entry.anchor);
+      }
+      injectedEntries.delete(entry);
+    }
+
+    function cleanupOrphanedInlineButtons() {
+      for (const entry of Array.from(injectedEntries)) {
+        const anchorGone =
+          !entry.anchor ||
+          entry.anchor.isConnected === false ||
+          (!entry.anchor.parentElement && !entry.anchor.parentNode);
+        const btnGone =
+          !entry.btn ||
+          entry.btn.isConnected === false ||
+          (!entry.btn.parentElement && !entry.btn.parentNode);
+        if (anchorGone || btnGone) {
+          removeEntry(entry);
+        }
+      }
+    }
+
+    function clearInlineButtons() {
+      if (inlineObserver) {
+        inlineObserver.disconnect();
+        inlineObserver = null;
+      }
+      inlineScanScheduled = false;
+      for (const entry of Array.from(injectedEntries)) {
+        removeEntry(entry);
+      }
+      if (typeof document.querySelectorAll === "function") {
+        try {
+          document.querySelectorAll(".pd-inline-btn").forEach((el) => {
+            if (typeof el.remove === "function") el.remove();
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    function createInlineButton(kind, onActivate) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className =
+        kind === "toolbar"
+          ? "pd-inline-btn pd-inline-toolbar-btn"
+          : "pd-inline-btn pd-inline-row-btn";
+      if (typeof btn.setAttribute === "function") {
+        btn.setAttribute("data-pd-inline", kind);
+        btn.setAttribute("aria-label", getInlineTooltip(kind));
+      }
+      btn.title = getInlineTooltip(kind);
+      btn.innerHTML =
+        kind === "toolbar"
+          ? `<span class="pd-inline-toolbar-icon">${renderBrandIconSvg()}</span><span>PD 直下</span>`
+          : renderBrandIconSvg();
+
+      const stopBubble = (e) => {
+        if (typeof e.stopPropagation === "function") e.stopPropagation();
+      };
+      btn.addEventListener("mousedown", stopBubble);
+      btn.addEventListener("pointerdown", stopBubble);
+      btn.addEventListener("click", async (e) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        if (typeof e.stopPropagation === "function") e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === "function") {
+          e.stopImmediatePropagation();
+        }
+        if (btn.classList.contains("pd-inline-busy")) return;
+        btn.classList.add("pd-inline-busy");
+        try {
+          await onActivate();
+        } finally {
+          btn.classList.remove("pd-inline-busy");
+        }
+      });
+
+      return btn;
+    }
+
+    function hasSiblingInlineBtn(anchor, kind) {
+      const parent = anchor?.parentElement || anchor?.parentNode;
+      if (!parent || typeof parent.querySelector !== "function") return false;
+      if (kind === "toolbar") {
+        return Boolean(parent.querySelector(".pd-inline-toolbar-btn"));
+      }
+      const next = anchor.nextElementSibling;
+      const prev = anchor.previousElementSibling;
+      if (next?.classList?.contains("pd-inline-row-btn")) return true;
+      if (prev?.classList?.contains("pd-inline-row-btn")) return true;
+      return Boolean(parent.querySelector(".pd-inline-row-btn"));
+    }
+
+    function syncInlineButtons() {
+      inlineScanScheduled = false;
+      if (!inlineActions || !isEnabled) return;
+
+      cleanupOrphanedInlineButtons();
+
+      if (typeof inlineActions.findRowAnchors === "function") {
+        let rowTargets = [];
+        try {
+          rowTargets = inlineActions.findRowAnchors(document) || [];
+        } catch {
+          rowTargets = [];
+        }
+
+        for (const target of rowTargets) {
+          const anchor = target?.anchor;
+          if (!anchor) continue;
+          if (typeof anchor.closest === "function" && anchor.closest("#pandirect-root")) {
+            continue;
+          }
+          if (anchorToEntry.has(anchor) || hasSiblingInlineBtn(anchor, "row")) {
+            continue;
+          }
+          const position = target.insertPosition || "afterend";
+          const itemSource =
+            typeof target.getItem === "function" ? target.getItem : target.item;
+          const btn = createInlineButton("row", () =>
+            handleInlineRowDownload(itemSource)
+          );
+          if (insertAdjacentCompat(anchor, position, btn)) {
+            const entry = { btn, anchor, kind: "row" };
+            injectedEntries.add(entry);
+            anchorToEntry.set(anchor, entry);
+          }
+        }
+      }
+
+      if (typeof inlineActions.findToolbarAnchors === "function") {
+        let toolbarTargets = [];
+        try {
+          toolbarTargets = inlineActions.findToolbarAnchors(document) || [];
+        } catch {
+          toolbarTargets = [];
+        }
+
+        for (const target of toolbarTargets) {
+          const anchor = target?.anchor;
+          if (!anchor) continue;
+          if (typeof anchor.closest === "function" && anchor.closest("#pandirect-root")) {
+            continue;
+          }
+          if (anchorToEntry.has(anchor) || hasSiblingInlineBtn(anchor, "toolbar")) {
+            continue;
+          }
+          const position = target.insertPosition || "afterend";
+          const btn = createInlineButton("toolbar", () => handleDownloadSelected());
+          if (insertAdjacentCompat(anchor, position, btn)) {
+            const entry = { btn, anchor, kind: "toolbar" };
+            injectedEntries.add(entry);
+            anchorToEntry.set(anchor, entry);
+          }
+        }
+      }
+    }
+
+    function scheduleInlineScan() {
+      if (!inlineActions || !isEnabled || inlineScanScheduled) return;
+      inlineScanScheduled = true;
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => syncInlineButtons());
+      } else {
+        setTimeout(() => syncInlineButtons(), 16);
+      }
+    }
+
+    function isOwnUiNode(node) {
+      if (!node || node.nodeType !== 1) return false;
+      if (node.id === "pandirect-root") return true;
+      if (node.classList?.contains("pd-inline-btn")) return true;
+      if (typeof node.closest === "function" && node.closest("#pandirect-root")) {
+        return true;
+      }
+      return false;
+    }
+
+    function startInlineObserver() {
+      if (!inlineActions || !isEnabled) return;
+      syncInlineButtons();
+      if (inlineObserver || typeof MutationObserver !== "function" || !document.body) {
+        return;
+      }
+      inlineObserver = new MutationObserver((mutations) => {
+        if (!isEnabled) return;
+        for (const m of mutations) {
+          if (m.target && isOwnUiNode(m.target)) continue;
+          let relevant = false;
+          for (const n of m.addedNodes || []) {
+            if (!isOwnUiNode(n)) {
+              relevant = true;
+              break;
+            }
+          }
+          if (!relevant) {
+            for (const n of m.removedNodes || []) {
+              if (!isOwnUiNode(n)) {
+                relevant = true;
+                break;
+              }
+            }
+          }
+          if (relevant) {
+            scheduleInlineScan();
+            return;
+          }
+        }
+      });
+      inlineObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
     fab.addEventListener("click", async () => {
       const isHidden = drawer.classList.contains("pd-hidden");
       drawer.classList.toggle("pd-hidden", !isHidden);
       if (isHidden) {
+        hideToast();
         await syncDefaultMode();
         await loadDirectory(getCurrentDir(), { resetHistory: true });
       }
@@ -467,74 +1022,44 @@
       openFolderDownloader(activeDir, activeDisplayPath);
     });
 
-    if (adapter.aria2Notice) {
-      root.querySelectorAll('input[name="pd-mode"]').forEach((radio) => {
-        radio.addEventListener("change", () => {
-          if (radio.value === "aria2" && radio.checked) {
-            showNotice(adapter.aria2Notice, "info");
-          }
-        });
+    root.querySelectorAll('input[name="pd-mode"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        if (!radio.checked) return;
+        currentDownloadMode = radio.value === "aria2" ? "aria2" : "browser";
+        modeSynced = true;
+        refreshInlineButtonTooltips();
+        if (adapter.aria2Notice && radio.value === "aria2") {
+          showNotice(adapter.aria2Notice, "info");
+        }
       });
-    }
+    });
 
-    dlSelectedBtn.addEventListener("click", async () => {
-      const domSel = getSelectedItemsFromDom();
-      const nameSet = new Set(domSel.names || []);
-      const idSet = new Set(domSel.ids || domSel.fsIds || []);
-
-      const matchedItems = cachedFiles.filter((f) => {
-        const itemId = f.id || f.fsId;
-        return idSet.has(itemId) || nameSet.has(f.name);
-      });
-
-      const selectedFolders = matchedItems.filter((f) => f.isdir);
-      const selectedFiles = matchedItems.filter((f) => !f.isdir);
-
-      if (selectedFolders.length === 1 && selectedFiles.length === 0) {
-        const folder = selectedFolders[0];
-        const folderLabel =
-          folder.displayPath || joinDisplayPath(activeDisplayPath, folder.name);
-        await openFolderDownloader(folder.path, folderLabel);
-        return;
-      }
-
-      if (selectedFolders.length > 0 && selectedFiles.length === 0) {
-        showNotice(
-          "勾选了多个文件夹，请逐个点击对应文件夹右侧的「下整夹」。",
-          "info"
-        );
-        return;
-      }
-
-      let targetIds = selectedFiles.map((f) => f.id || f.fsId);
-      const domIds = domSel.ids || domSel.fsIds || [];
-      if (targetIds.length === 0 && domIds.length > 0) {
-        targetIds = domIds;
-      }
-
-      if (targetIds.length === 0) {
-        showNotice(
-          "未检测到页面已勾选的文件，请先在网盘列表勾选文件，或直接在下方列表点击「直下 / 下整夹」。",
-          "info"
-        );
-        return;
-      }
-
-      await triggerDownloadItems(targetIds);
+    dlSelectedBtn.addEventListener("click", () => {
+      handleDownloadSelected();
     });
 
     function applyEnabledState(enabled) {
-      const isEnabled = enabled !== false;
+      isEnabled = enabled !== false;
       root.classList.toggle("pd-hidden", !isEnabled);
       if (!isEnabled) {
         drawer.classList.add("pd-hidden");
+        hideToast();
+        clearInlineButtons();
+      } else {
+        startInlineObserver();
       }
     }
 
     async function initEnabledVisibility() {
       try {
         if (typeof chrome !== "undefined" && chrome.storage?.local?.get) {
-          const stored = await chrome.storage.local.get({ enabled: true });
+          const stored = await chrome.storage.local.get({
+            enabled: true,
+            downloadMode: "browser",
+          });
+          if (stored?.downloadMode) {
+            applyDownloadMode(stored.downloadMode);
+          }
           applyEnabledState(stored?.enabled !== false);
           return;
         }
@@ -544,6 +1069,9 @@
 
       try {
         const status = await sendMessage({ type: "PANDIRECT_GET_STATUS" });
+        if (status?.ok && status.downloadMode) {
+          applyDownloadMode(status.downloadMode);
+        }
         applyEnabledState(status?.ok ? status.enabled !== false : true);
       } catch {
         applyEnabledState(true);
@@ -552,8 +1080,20 @@
 
     if (typeof chrome !== "undefined" && chrome.storage?.onChanged?.addListener) {
       chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== "local" || !changes.enabled) return;
-        applyEnabledState(changes.enabled.newValue);
+        if (areaName !== "local") return;
+        if (changes.downloadMode) {
+          applyDownloadMode(changes.downloadMode.newValue);
+        }
+        if (changes.enabled) {
+          applyEnabledState(changes.enabled.newValue);
+        }
+      });
+    }
+
+    if (inlineActions && typeof window.addEventListener === "function") {
+      window.addEventListener("hashchange", () => {
+        cachedAt = 0;
+        scheduleInlineScan();
       });
     }
 
