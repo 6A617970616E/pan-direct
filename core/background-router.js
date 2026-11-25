@@ -139,6 +139,19 @@ export function createBackgroundRuntime(providers) {
         };
       }
 
+      case "PANDIRECT_PROVIDER_SYNC_SESSION": {
+        const provider = registry.get(message.provider);
+        if (typeof provider.syncSession !== "function") {
+          return { ok: false, error: "当前网盘不支持会话同步" };
+        }
+        const ctx = createProviderContext(provider.id);
+        const result = await provider.syncSession(message.session, ctx, sender);
+        return {
+          ok: true,
+          ...(result || {}),
+        };
+      }
+
       case "PANDIRECT_LIST_FILES": {
         const provider = registry.get(message.provider);
         const ctx = createProviderContext(provider.id);

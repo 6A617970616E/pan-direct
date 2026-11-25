@@ -24,8 +24,9 @@ PanDirect 采用单仓库双产物构建，不同发行版本的权限边界严�
   - 仅包含基于官方开放平台 OAuth 2.0 与 OpenAPI 的网盘适配器（当前为百度网盘）；
   - **不申请 `cookies` 权限**，仅在 `https://pan.baidu.com/*` 页面注入悬浮下载抽屉脚本。
 - **开源社区版（`PanDirect (Community)`，仅发布于 GitHub Releases / 源码构建，不上架浏览器应用商店）**：
-  - 额外包含社区实验性适配器（如夸克网盘）；
-  - 为支持本地 Aria2 推送，社区版额外申请 `cookies` 权限，仅在用户主动触发推送至**本机或局域网 Aria2** 时在内存中实时读取对应网盘的会话 Cookie 并透传给本地 Aria2，**绝不持久化到存储、绝不输出日志、绝不发送至任何远程或公网地址**。
+  - 额外包含社区实验性适配器（如夸克网盘、迅雷云盘）；
+  - 夸克网盘适配器为支持本地 Aria2 推送额外申请 `cookies` 权限，仅在用户主动触发推送至**本机或局域网 Aria2** 时在内存中实时读取对应网盘的会话 Cookie 并透传给本地 Aria2，**绝不持久化到存储、绝不输出日志、绝不发送至任何远程或公网地址**；
+  - 迅雷云盘适配器仅将已登录 `pan.xunlei.com` 页面中的会话令牌临时同步至内存级 `chrome.storage.session`（关闭浏览器自动清除，绝不写入磁盘 `chrome.storage.local`，绝不上传至任何第三方）。
 
 ### 3. 本地处理与存储的数据
 
@@ -101,8 +102,9 @@ PanDirect is built from a single open-source repository into two isolated editio
   - Includes only official OpenAPI cloud drive adapters (currently Baidu Netdisk via official OAuth 2.0 and OpenAPI).
   - Does **not** request the `cookies` permission and injects content scripts **only** on `https://pan.baidu.com/*`.
 - **Community Edition (`PanDirect (Community)`, distributed exclusively via GitHub Releases / source builds, not on web stores):**
-  - Includes optional community experimental adapters (such as Quark Netdisk).
-  - Requests the `cookies` permission solely to read active session cookies in memory on demand when forwarding downloads to the user's **trusted local or LAN Aria2 RPC** (`localhost`, `127.0.0.1`, RFC 1918 private LAN). Cookies are never persisted to storage, never logged, and never transmitted to public/remote endpoints.
+  - Includes optional community experimental adapters (such as Quark Netdisk and Xunlei Cloud Drive).
+  - The Quark adapter requests the `cookies` permission solely to read active session cookies in memory on demand when forwarding downloads to the user's **trusted local or LAN Aria2 RPC** (`localhost`, `127.0.0.1`, RFC 1918 private LAN). Cookies are never persisted to storage, never logged, and never transmitted to public/remote endpoints.
+  - The Xunlei adapter syncs active `pan.xunlei.com` session tokens strictly into ephemeral in-memory `chrome.storage.session` (cleared on browser close; never persisted to `chrome.storage.local` and never transmitted to third parties).
 
 ### 3. Data Handled Locally
 

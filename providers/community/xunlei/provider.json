@@ -1,0 +1,40 @@
+{
+  "id": "xunlei",
+  "name": "迅雷云盘",
+  "tier": "community",
+  "enabled": true,
+  "description": "社区实验性迅雷云盘适配器：复用浏览器已登录 pan.xunlei.com 会话，获取单文件与整文件夹直链",
+  "entry": "provider.js",
+  "exportName": "xunleiProvider",
+  "popupEntry": "popup-card.js",
+  "popupExportName": "renderXunleiPopupCard",
+  "manifest": {
+    "permissions": [],
+    "host_permissions": [
+      "*://*.xunlei.com/*",
+      "*://*.xunleix.com/*",
+      "*://*.sdpan.cn/*",
+      "*://*.sandai.net/*",
+      "*://*.88cdn.com/*",
+      "*://*.xycdn.com/*",
+      "*://*.xlpan.com/*",
+      "*://*.onethingpcs.com/*",
+      "*://*.p2cdn.com/*"
+    ],
+    "content_scripts": [
+      {
+        "matches": [
+          "https://pan.xunlei.com/*"
+        ],
+        "js": [
+          "core/ui/content-drawer.js",
+          "providers/community/xunlei/content.js"
+        ],
+        "css": [
+          "core/ui/content-drawer.css"
+        ],
+        "run_at": "document_idle"
+      }
+    ]
+  }
+}

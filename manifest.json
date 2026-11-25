@@ -35,6 +35,15 @@
     "*://*.baidupcs.com/*",
     "*://*.quark.cn/*",
     "*://*.uc.cn/*",
+    "*://*.xunlei.com/*",
+    "*://*.xunleix.com/*",
+    "*://*.sdpan.cn/*",
+    "*://*.sandai.net/*",
+    "*://*.88cdn.com/*",
+    "*://*.xycdn.com/*",
+    "*://*.xlpan.com/*",
+    "*://*.onethingpcs.com/*",
+    "*://*.p2cdn.com/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
@@ -60,6 +69,19 @@
       "js": [
         "core/ui/content-drawer.js",
         "providers/community/quark/content.js"
+      ],
+      "css": [
+        "core/ui/content-drawer.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://pan.xunlei.com/*"
+      ],
+      "js": [
+        "core/ui/content-drawer.js",
+        "providers/community/xunlei/content.js"
       ],
       "css": [
         "core/ui/content-drawer.css"

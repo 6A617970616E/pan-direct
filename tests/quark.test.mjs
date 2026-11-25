@@ -769,10 +769,8 @@ test("Real repo dual-artifact build keeps Quark and cookies 100% out of store.zi
     });
 
     assert.deepEqual(storeRes.providers, ["official/baidu"]);
-    assert.deepEqual(communityRes.providers, [
-      "official/baidu",
-      "community/quark",
-    ]);
+    assert.ok(communityRes.providers.includes("official/baidu"));
+    assert.ok(communityRes.providers.includes("community/quark"));
 
     const storeManifest = JSON.parse(
       fs.readFileSync(path.join(storeRes.outDir, "manifest.json"), "utf8")

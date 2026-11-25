@@ -43,7 +43,7 @@
 本项目采用 `core/` + `providers/official/` + `providers/community/` 分层架构，零第三方 npm 依赖：
 
 - **商店正式版（`dist/store.zip`）**：仅包含 100% 官方 OpenAPI 适配器（百度网盘），最小权限集（无 `cookies` 权限、无 `localhost` 网页脚本注入），用于上架 Microsoft Edge Add-ons 与 Chrome Web Store；提审指南见 [docs/STORE_SUBMISSION.md](./docs/STORE_SUBMISSION.md)。
-- **社区版（`dist/community.zip`）**：额外包含社区实验性适配器（如夸克网盘，支持浏览器直下与本机 Aria2 零配置自动复用会话），仅通过 GitHub Releases / 源码构建分发。
+- **社区版（`dist/community.zip`）**：额外包含社区实验性适配器（夸克网盘、迅雷云盘，支持浏览器直下、整文件夹写盘与本机 Aria2 零配置自动复用会话），仅通过 GitHub Releases / 源码构建分发。
 - **直接开发加载**：仓库根目录自带已同步的 `manifest.json`，可直接加载解压测试。
 - **双产物构建**（Node.js >= 18）：
   ```bash
