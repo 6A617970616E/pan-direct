@@ -678,14 +678,18 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
 
   // Verify Quark inlineActions config & idIsFolderPath
   assert.equal(mountedAdapter.idIsFolderPath, true);
-  assert.equal(typeof mountedAdapter.inlineActions?.findRowAnchors, "function");
+  assert.equal(
+    typeof mountedAdapter.inlineActions?.resolveRowContextFromTarget,
+    "function"
+  );
+  assert.equal(typeof mountedAdapter.inlineActions?.findMenuAnchors, "function");
   assert.equal(typeof mountedAdapter.inlineActions?.findToolbarAnchors, "function");
 
-  // Build minimal Quark AntD row + toolbar DOM to verify anchor matching & promo exclusion
+  // Build minimal Quark AntD row + dropdown menu + toolbar DOM
   const mockToolbarContainer = { tagName: "DIV" };
   const mockPromoContainer = { tagName: "DIV" };
-  const mockRowActionBar = { tagName: "DIV", parentElement: null };
   const mockRow = {
+    nodeType: 1,
     tagName: "TR",
     className: "ant-table-row",
     getAttribute: (k) => (k === "data-row-key" ? "fid_quark_9988" : null),
@@ -698,17 +702,43 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
       return null;
     },
   };
-  mockRowActionBar.parentElement = mockRow;
 
-  const mockRowDlBtn = {
+  const mockMoreBtn = {
+    nodeType: 1,
     tagName: "SPAN",
-    className: "icon-download",
-    textContent: "",
-    style: {},
-    hidden: false,
-    parentElement: mockRowActionBar,
-    getAttribute: (k) => (k === "title" ? "下载" : null),
-    closest: (sel) => (sel.includes("tr.ant-table-row") ? mockRow : null),
+    className: "icon-more",
+    closest: (sel) => {
+      if (sel.includes("more")) return mockMoreBtn;
+      if (sel.includes("tr.ant-table-row")) return mockRow;
+      return null;
+    },
+  };
+
+  const rowCtx = mountedAdapter.inlineActions.resolveRowContextFromTarget(mockMoreBtn);
+  assert.ok(rowCtx);
+  assert.equal(rowCtx.isMoreTrigger, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(rowCtx.item)), {
+    id: "fid_quark_9988",
+    name: "guide.pdf",
+    isdir: null,
+  });
+
+  const mockDropdownUl = {
+    tagName: "UL",
+    closest: () => null,
+    querySelectorAll: () => [mockMenuRename, mockMenuMove],
+  };
+  const mockMenuRename = {
+    tagName: "LI",
+    textContent: "重命名",
+    parentElement: mockDropdownUl,
+    closest: () => null,
+  };
+  const mockMenuMove = {
+    tagName: "LI",
+    textContent: "移动",
+    parentElement: mockDropdownUl,
+    closest: () => null,
   };
 
   const mockToolbarDlBtn = {
@@ -734,20 +764,18 @@ test("Quark content.js parses multi-level SPA hash routes and AntD selected rows
   };
 
   const mockQuarkDoc = {
+    body: { children: [] },
     querySelectorAll: (sel) => {
-      if (sel.includes(".icon-download")) return [mockRowDlBtn, mockClientDlBtn];
+      if (sel.includes("ant-dropdown-menu")) return [mockDropdownUl];
       return [mockToolbarDlBtn, mockClientDlBtn];
     },
   };
 
-  const rowAnchors = mountedAdapter.inlineActions.findRowAnchors(mockQuarkDoc);
-  assert.equal(rowAnchors.length, 1);
-  assert.equal(rowAnchors[0].anchor, mockRowDlBtn);
-  assert.deepEqual(JSON.parse(JSON.stringify(rowAnchors[0].getItem())), {
-    id: "fid_quark_9988",
-    name: "guide.pdf",
-    isdir: null,
-  });
+  const menuAnchors = mountedAdapter.inlineActions.findMenuAnchors(mockQuarkDoc);
+  assert.equal(menuAnchors.length, 1);
+  assert.equal(menuAnchors[0].anchor, mockMenuRename);
+  assert.equal(menuAnchors[0].insertPosition, "beforebegin");
+  assert.equal(menuAnchors[0].itemTag, "li");
 
   const toolbarAnchors = mountedAdapter.inlineActions.findToolbarAnchors(mockQuarkDoc);
   assert.equal(toolbarAnchors.length, 1);

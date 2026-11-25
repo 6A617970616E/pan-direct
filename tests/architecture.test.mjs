@@ -945,13 +945,12 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
   }
 
   // Build realistic Baidu /disk/main DOM
+  const docListeners = new Map();
   const body = createEl("body");
   const doc = {
     body,
     createElement: (tag) => {
       const el = createEl(tag);
-      // Support drawer root innerHTML child lookups
-      const origDesc = Object.getOwnPropertyDescriptor(el, "innerHTML");
       Object.defineProperty(el, "innerHTML", {
         get: () => el._html || "",
         set: (html) => {
@@ -986,6 +985,18 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
     },
     querySelectorAll: (sel) => body.querySelectorAll(sel),
     querySelector: (sel) => body.querySelector(sel),
+    addEventListener: (type, fn) => {
+      if (!docListeners.has(type)) docListeners.set(type, new Set());
+      docListeners.get(type).add(fn);
+    },
+    removeEventListener: (type, fn) => {
+      docListeners.get(type)?.delete(fn);
+    },
+    emitDocEvent: (type, event) => {
+      for (const fn of docListeners.get(type) || []) {
+        fn(event);
+      }
+    },
   };
 
   // Top header promo buttons that MUST be ignored
@@ -1016,11 +1027,9 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
     })
   );
   const fileActions = createEl("div", { className: "wp-s-pan-table__body-row-action" });
-  fileActions.appendChild(createEl("span", { attrs: { title: "分享" } }));
-  const nativeRowDl = createEl("span", { attrs: { title: "下载" } });
-  nativeRowDl.appendChild(createEl("i", { className: "u-icon-download" }));
-  fileActions.appendChild(nativeRowDl);
-  fileActions.appendChild(createEl("span", { attrs: { title: "删除" } }));
+  fileActions.appendChild(createEl("span", { attrs: { title: "下载" } }));
+  const fileMoreBtn = createEl("span", { className: "u-icon-more", attrs: { title: "更多" } });
+  fileActions.appendChild(fileMoreBtn);
   fileTd.appendChild(fileActions);
   fileRow.appendChild(fileTd);
 
@@ -1035,7 +1044,8 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
     })
   );
   const folderActions = createEl("div", { className: "wp-s-pan-table__body-row-action" });
-  folderActions.appendChild(createEl("i", { className: "u-icon-download", attrs: { title: "下载" } }));
+  const folderMoreBtn = createEl("span", { className: "u-icon-more", attrs: { title: "更多" } });
+  folderActions.appendChild(folderMoreBtn);
   folderTd.appendChild(folderActions);
   folderRow.appendChild(folderTd);
 
@@ -1043,6 +1053,26 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
   tbody.appendChild(folderRow);
   table.appendChild(tbody);
   body.appendChild(table);
+
+  // Portal three-dots dropdown menu mounted directly under document.body (matching Baidu UI)
+  const portalPopover = createEl("div", { className: "u-popover u-popper" });
+  const menuList = createEl("div", { className: "u-dropdown-menu" });
+  const renameItem = createEl("div", { className: "u-dropdown-menu__item" });
+  renameItem.appendChild(createEl("span", { text: "重命名" }));
+  const copyItem = createEl("div", { className: "u-dropdown-menu__item" });
+  copyItem.appendChild(createEl("span", { text: "复制" }));
+  const moveItem = createEl("div", { className: "u-dropdown-menu__item" });
+  moveItem.appendChild(createEl("span", { text: "移动" }));
+  const exportItem = createEl("div", { className: "u-dropdown-menu__item" });
+  exportItem.appendChild(createEl("span", { text: "导出文件目录" }));
+  const shareItem = createEl("div", { className: "u-dropdown-menu__item" });
+  shareItem.appendChild(createEl("span", { text: "共享" }));
+  menuList.appendChild(renameItem);
+  menuList.appendChild(copyItem);
+  menuList.appendChild(moveItem);
+  menuList.appendChild(exportItem);
+  menuList.appendChild(shareItem);
+  portalPopover.appendChild(menuList);
 
   const sentMessages = [];
   const storageListeners = [];
@@ -1116,28 +1146,33 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
 
   await new Promise((r) => setTimeout(r, 10));
 
-  // 1. Injected exactly 2 row PD buttons (1 per row) + 1 toolbar PD button (none on 下载客户端/离线下载)
-  const rowBtns = body.querySelectorAll(".pd-inline-row-btn");
+  // 1. Row hover bar stays 100% clean (zero icons injected next to native download icon)
+  assert.equal(fileActions.querySelectorAll(".pd-inline-btn, .pd-inline-menu-item").length, 0);
+  // Top selection toolbar has 1 PD button; header promo buttons have 0
   const toolbarBtns = body.querySelectorAll(".pd-inline-toolbar-btn");
-  assert.equal(rowBtns.length, 2);
   assert.equal(toolbarBtns.length, 1);
   assert.equal(header.querySelectorAll(".pd-inline-btn").length, 0);
-  // Row PD button inserted right after native download icon inside fileActions (not escaping hover bar)
-  assert.equal(nativeRowDl.nextElementSibling, rowBtns[0]);
-  assert.equal(rowBtns[0].parentElement, fileActions);
-  // Tooltip reflects synced Aria2 mode without ever opening the drawer
-  assert.ok(rowBtns[0].title.includes("推送 Aria2"));
-  // Single-icon folder row button stays INSIDE folderActions
-  assert.equal(rowBtns[1].parentElement, folderActions);
 
-  // 2. Repeated mutation does NOT duplicate buttons
-  mutationCb([{ target: tbody, addedNodes: [fileRow], removedNodes: [] }]);
-  await new Promise((r) => setTimeout(r, 30));
-  assert.equal(body.querySelectorAll(".pd-inline-row-btn").length, 2);
-  assert.equal(body.querySelectorAll(".pd-inline-toolbar-btn").length, 1);
+  // 2. Clicking '...' on fileRow mounts portal menu -> injects '直连下载' right above '重命名'
+  doc.emitDocEvent("mousedown", { target: fileMoreBtn });
+  body.appendChild(portalPopover);
+  mutationCb([{ target: body, addedNodes: [portalPopover], removedNodes: [] }]);
+  await new Promise((r) => setTimeout(r, 95));
 
-  // 3. Clicking file row PD button lazily loads current dir and downloads via Aria2 + shows floating toast
-  await rowBtns[0].trigger("click");
+  const menuItems = menuList.querySelectorAll(".pd-inline-menu-item");
+  assert.equal(menuItems.length, 1);
+  assert.equal(menuItems[0].nextElementSibling, renameItem);
+  assert.ok(menuItems[0].innerHTML.includes("直连下载"));
+  assert.ok(menuItems[0].title.includes("推送 Aria2"));
+
+  // Repeated mutation does NOT duplicate menu item
+  mutationCb([{ target: body, addedNodes: [portalPopover], removedNodes: [] }]);
+  await new Promise((r) => setTimeout(r, 25));
+  assert.equal(menuList.querySelectorAll(".pd-inline-menu-item").length, 1);
+
+  // 3. Brushing mouse over folderRow on the way into the menu MUST NOT hijack activeMenuTarget
+  doc.emitDocEvent("mouseover", { target: folderTd });
+  await menuItems[0].trigger("click");
   const listCalls = sentMessages.filter((m) => m.type === "PANDIRECT_LIST_FILES");
   const dlCalls = sentMessages.filter((m) => m.type === "PANDIRECT_DOWNLOAD_ITEMS");
   assert.equal(listCalls.length, 1);
@@ -1149,8 +1184,9 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
   assert.equal(toastEl.classList.contains("pd-hidden"), false);
   assert.ok(body.querySelector("#pd-toast-text").textContent.includes("Aria2"));
 
-  // 4. Clicking folder row PD button reuses fresh dir cache (no 2nd LIST_FILES) and opens folder downloader
-  await rowBtns[1].trigger("click");
+  // 4. Clicking '...' on folderRow switches activeMenuTarget on reused portal menu -> opens folder downloader
+  doc.emitDocEvent("mousedown", { target: folderMoreBtn });
+  await menuItems[0].trigger("click");
   assert.equal(sentMessages.filter((m) => m.type === "PANDIRECT_LIST_FILES").length, 1);
   const folderCalls = sentMessages.filter((m) => m.type === "PANDIRECT_OPEN_FOLDER_DOWNLOADER");
   assert.equal(folderCalls.length, 1);
@@ -1161,13 +1197,13 @@ test("core/ui/content-drawer injects non-intrusive inline row & toolbar PD butto
   await toolbarBtns[0].trigger("click");
   assert.equal(sentMessages.filter((m) => m.type === "PANDIRECT_DOWNLOAD_ITEMS").length, 2);
 
-  // 6. Toggling extension OFF removes ALL inline buttons immediately; toggling ON restores them
+  // 6. Toggling extension OFF removes ALL injected menu items & toolbar buttons immediately; ON restores them
   storageListeners[0]({ enabled: { oldValue: true, newValue: false } }, "local");
-  assert.equal(body.querySelectorAll(".pd-inline-btn").length, 0);
+  assert.equal(body.querySelectorAll(".pd-inline-btn, .pd-inline-menu-item").length, 0);
   assert.equal(toastEl.classList.contains("pd-hidden"), true);
 
   storageListeners[0]({ enabled: { oldValue: false, newValue: true } }, "local");
-  assert.equal(body.querySelectorAll(".pd-inline-row-btn").length, 2);
+  assert.equal(menuList.querySelectorAll(".pd-inline-menu-item").length, 1);
   assert.equal(body.querySelectorAll(".pd-inline-toolbar-btn").length, 1);
 });
 

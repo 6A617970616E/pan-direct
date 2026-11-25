@@ -219,6 +219,9 @@
       if (kind === "toolbar") {
         return `PanDirect 批量直下已勾选（${modeLabel}）`;
       }
+      if (kind === "menu") {
+        return `PanDirect 直连下载（${modeLabel}）`;
+      }
       return `PanDirect 一键直下（${modeLabel}）`;
     }
 
@@ -787,42 +790,171 @@
       }
     }
 
+    let activeMenuTarget = null;
+    let rowLockUntil = 0;
+    let rowTrackingAttached = false;
+
+    function isElementVisible(el) {
+      if (!el || el.isConnected === false) return false;
+      if (el.hidden || el.style?.display === "none") return false;
+      if (typeof getComputedStyle === "function") {
+        try {
+          const cs = getComputedStyle(el);
+          if (cs && (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0")) {
+            return false;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (typeof el.getBoundingClientRect === "function") {
+        const rect = el.getBoundingClientRect();
+        if (rect && rect.width === 0 && rect.height === 0) return false;
+      }
+      return true;
+    }
+
+    function hasVisibleInjectedMenu() {
+      for (const entry of injectedEntries) {
+        if (entry.kind === "menu" && isElementVisible(entry.btn)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function dismissNativeMenu() {
+      setTimeout(() => {
+        try {
+          if (typeof KeyboardEvent === "function" && typeof document.dispatchEvent === "function") {
+            document.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true })
+            );
+          }
+          if (typeof MouseEvent === "function" && document.body && typeof document.body.dispatchEvent === "function") {
+            document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+            document.body.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+            document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+          }
+        } catch {
+          // ignore
+        }
+      }, 0);
+    }
+
+    function handleRowPointerEvent(e) {
+      updateActiveRowFromEvent(e, { strong: true });
+    }
+
+    function handleRowHoverEvent(e) {
+      updateActiveRowFromEvent(e, { strong: false });
+    }
+
+    function updateActiveRowFromEvent(e, { strong = false } = {}) {
+      if (!isEnabled || !inlineActions) return;
+      if (typeof inlineActions.resolveRowContextFromTarget !== "function") return;
+      const target = e?.target;
+      if (!target || isOwnUiNode(target)) return;
+
+      let ctx = null;
+      try {
+        ctx = inlineActions.resolveRowContextFromTarget(target);
+      } catch {
+        ctx = null;
+      }
+      if (!ctx || !ctx.item || (!ctx.item.id && !ctx.item.name)) return;
+
+      const now = Date.now();
+      if (strong) {
+        activeMenuTarget = { item: ctx.item, row: ctx.row || null, updatedAt: now };
+        rowLockUntil = now + 1200;
+        scheduleInlineScan();
+        setTimeout(() => {
+          if (isEnabled) syncInlineButtons();
+        }, 80);
+        return;
+      }
+
+      if (ctx.isMoreTrigger) {
+        activeMenuTarget = { item: ctx.item, row: ctx.row || null, updatedAt: now };
+        rowLockUntil = now + 900;
+        scheduleInlineScan();
+        setTimeout(() => {
+          if (isEnabled) syncInlineButtons();
+        }, 80);
+        return;
+      }
+
+      if (now >= rowLockUntil && !hasVisibleInjectedMenu()) {
+        activeMenuTarget = { item: ctx.item, row: ctx.row || null, updatedAt: now };
+      }
+    }
+
+    function attachRowTrackingListeners() {
+      if (
+        rowTrackingAttached ||
+        !inlineActions ||
+        typeof inlineActions.resolveRowContextFromTarget !== "function" ||
+        typeof document.addEventListener !== "function"
+      ) {
+        return;
+      }
+      document.addEventListener("pointerdown", handleRowPointerEvent, true);
+      document.addEventListener("mousedown", handleRowPointerEvent, true);
+      document.addEventListener("click", handleRowPointerEvent, true);
+      document.addEventListener("contextmenu", handleRowPointerEvent, true);
+      document.addEventListener("mouseover", handleRowHoverEvent, true);
+      rowTrackingAttached = true;
+    }
+
+    function detachRowTrackingListeners() {
+      if (!rowTrackingAttached || typeof document.removeEventListener !== "function") {
+        rowTrackingAttached = false;
+        return;
+      }
+      document.removeEventListener("pointerdown", handleRowPointerEvent, true);
+      document.removeEventListener("mousedown", handleRowPointerEvent, true);
+      document.removeEventListener("click", handleRowPointerEvent, true);
+      document.removeEventListener("contextmenu", handleRowPointerEvent, true);
+      document.removeEventListener("mouseover", handleRowHoverEvent, true);
+      rowTrackingAttached = false;
+    }
+
     function clearInlineButtons() {
       if (inlineObserver) {
         inlineObserver.disconnect();
         inlineObserver = null;
       }
+      detachRowTrackingListeners();
+      activeMenuTarget = null;
+      rowLockUntil = 0;
       inlineScanScheduled = false;
       for (const entry of Array.from(injectedEntries)) {
         removeEntry(entry);
       }
       if (typeof document.querySelectorAll === "function") {
         try {
-          document.querySelectorAll(".pd-inline-btn").forEach((el) => {
-            if (typeof el.remove === "function") el.remove();
-          });
+          document
+            .querySelectorAll(".pd-inline-btn, .pd-inline-menu-item")
+            .forEach((el) => {
+              if (typeof el.remove === "function") el.remove();
+            });
         } catch {
           // ignore
         }
       }
     }
 
-    function createInlineButton(kind, onActivate) {
+    function createInlineToolbarButton(onActivate) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className =
-        kind === "toolbar"
-          ? "pd-inline-btn pd-inline-toolbar-btn"
-          : "pd-inline-btn pd-inline-row-btn";
+      btn.className = "pd-inline-btn pd-inline-toolbar-btn";
       if (typeof btn.setAttribute === "function") {
-        btn.setAttribute("data-pd-inline", kind);
-        btn.setAttribute("aria-label", getInlineTooltip(kind));
+        btn.setAttribute("data-pd-inline", "toolbar");
+        btn.setAttribute("aria-label", getInlineTooltip("toolbar"));
       }
-      btn.title = getInlineTooltip(kind);
-      btn.innerHTML =
-        kind === "toolbar"
-          ? `<span class="pd-inline-toolbar-icon">${renderBrandIconSvg()}</span><span>PD 直下</span>`
-          : renderBrandIconSvg();
+      btn.title = getInlineTooltip("toolbar");
+      btn.innerHTML = `<span class="pd-inline-toolbar-icon">${renderBrandIconSvg()}</span><span>PD 直下</span>`;
 
       const stopBubble = (e) => {
         if (typeof e.stopPropagation === "function") e.stopPropagation();
@@ -847,17 +979,62 @@
       return btn;
     }
 
-    function hasSiblingInlineBtn(anchor, kind) {
+    function createInlineMenuItem(itemTag, onActivate) {
+      const tag = String(itemTag || "div").toLowerCase() === "li" ? "li" : "div";
+      const itemEl = document.createElement(tag);
+      itemEl.className = "pd-inline-menu-item";
+      if (typeof itemEl.setAttribute === "function") {
+        itemEl.setAttribute("role", "menuitem");
+        itemEl.setAttribute("tabindex", "0");
+        itemEl.setAttribute("data-pd-inline", "menu");
+        itemEl.setAttribute("aria-label", getInlineTooltip("menu"));
+      }
+      itemEl.title = getInlineTooltip("menu");
+      itemEl.innerHTML = `<span class="pd-inline-menu-icon">${renderBrandIconSvg()}</span><span class="pd-inline-menu-label">直连下载</span>`;
+
+      const stopBubble = (e) => {
+        if (typeof e.stopPropagation === "function") e.stopPropagation();
+      };
+      itemEl.addEventListener("mousedown", stopBubble);
+      itemEl.addEventListener("pointerdown", stopBubble);
+
+      const activate = async (e) => {
+        if (typeof e?.preventDefault === "function") e.preventDefault();
+        if (typeof e?.stopPropagation === "function") e.stopPropagation();
+        if (typeof e?.stopImmediatePropagation === "function") {
+          e.stopImmediatePropagation();
+        }
+        if (itemEl.classList.contains("pd-inline-busy")) return;
+        const snapshot = activeMenuTarget?.item ? { ...activeMenuTarget.item } : null;
+        dismissNativeMenu();
+        itemEl.classList.add("pd-inline-busy");
+        try {
+          await onActivate(snapshot);
+        } finally {
+          itemEl.classList.remove("pd-inline-busy");
+        }
+      };
+
+      itemEl.addEventListener("click", activate);
+      itemEl.addEventListener("keydown", (e) => {
+        if (e?.key === "Enter" || e?.key === " ") {
+          activate(e);
+        }
+      });
+
+      return itemEl;
+    }
+
+    function hasSiblingInlineNode(anchor, kind) {
       const parent = anchor?.parentElement || anchor?.parentNode;
       if (!parent || typeof parent.querySelector !== "function") return false;
       if (kind === "toolbar") {
         return Boolean(parent.querySelector(".pd-inline-toolbar-btn"));
       }
-      const next = anchor.nextElementSibling;
-      const prev = anchor.previousElementSibling;
-      if (next?.classList?.contains("pd-inline-row-btn")) return true;
-      if (prev?.classList?.contains("pd-inline-row-btn")) return true;
-      return Boolean(parent.querySelector(".pd-inline-row-btn"));
+      if (kind === "menu") {
+        return Boolean(parent.querySelector(".pd-inline-menu-item"));
+      }
+      return false;
     }
 
     function syncInlineButtons() {
@@ -866,31 +1043,32 @@
 
       cleanupOrphanedInlineButtons();
 
-      if (typeof inlineActions.findRowAnchors === "function") {
-        let rowTargets = [];
+      if (typeof inlineActions.findMenuAnchors === "function") {
+        let menuTargets = [];
         try {
-          rowTargets = inlineActions.findRowAnchors(document) || [];
+          menuTargets = inlineActions.findMenuAnchors(document) || [];
         } catch {
-          rowTargets = [];
+          menuTargets = [];
         }
 
-        for (const target of rowTargets) {
+        for (const target of menuTargets) {
           const anchor = target?.anchor;
           if (!anchor) continue;
           if (typeof anchor.closest === "function" && anchor.closest("#pandirect-root")) {
             continue;
           }
-          if (anchorToEntry.has(anchor) || hasSiblingInlineBtn(anchor, "row")) {
+          if (anchorToEntry.has(anchor) || hasSiblingInlineNode(anchor, "menu")) {
             continue;
           }
-          const position = target.insertPosition || "afterend";
-          const itemSource =
-            typeof target.getItem === "function" ? target.getItem : target.item;
-          const btn = createInlineButton("row", () =>
-            handleInlineRowDownload(itemSource)
-          );
-          if (insertAdjacentCompat(anchor, position, btn)) {
-            const entry = { btn, anchor, kind: "row" };
+          const position = target.insertPosition || "beforebegin";
+          const directItemGetter =
+            typeof target.getItem === "function" ? target.getItem : null;
+          const itemEl = createInlineMenuItem(target.itemTag, (snapshot) => {
+            const resolved = directItemGetter ? directItemGetter() : snapshot;
+            return handleInlineRowDownload(resolved || snapshot);
+          });
+          if (insertAdjacentCompat(anchor, position, itemEl)) {
+            const entry = { btn: itemEl, anchor, kind: "menu" };
             injectedEntries.add(entry);
             anchorToEntry.set(anchor, entry);
           }
@@ -911,11 +1089,11 @@
           if (typeof anchor.closest === "function" && anchor.closest("#pandirect-root")) {
             continue;
           }
-          if (anchorToEntry.has(anchor) || hasSiblingInlineBtn(anchor, "toolbar")) {
+          if (anchorToEntry.has(anchor) || hasSiblingInlineNode(anchor, "toolbar")) {
             continue;
           }
           const position = target.insertPosition || "afterend";
-          const btn = createInlineButton("toolbar", () => handleDownloadSelected());
+          const btn = createInlineToolbarButton(() => handleDownloadSelected());
           if (insertAdjacentCompat(anchor, position, btn)) {
             const entry = { btn, anchor, kind: "toolbar" };
             injectedEntries.add(entry);
@@ -938,8 +1116,18 @@
     function isOwnUiNode(node) {
       if (!node || node.nodeType !== 1) return false;
       if (node.id === "pandirect-root") return true;
-      if (node.classList?.contains("pd-inline-btn")) return true;
-      if (typeof node.closest === "function" && node.closest("#pandirect-root")) {
+      if (
+        node.classList?.contains("pd-inline-btn") ||
+        node.classList?.contains("pd-inline-menu-item")
+      ) {
+        return true;
+      }
+      if (
+        typeof node.closest === "function" &&
+        (node.closest("#pandirect-root") ||
+          node.closest(".pd-inline-btn") ||
+          node.closest(".pd-inline-menu-item"))
+      ) {
         return true;
       }
       return false;
@@ -947,6 +1135,7 @@
 
     function startInlineObserver() {
       if (!inlineActions || !isEnabled) return;
+      attachRowTrackingListeners();
       syncInlineButtons();
       if (inlineObserver || typeof MutationObserver !== "function" || !document.body) {
         return;

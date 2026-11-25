@@ -166,68 +166,247 @@
     };
   }
 
-  function resolveRowAnchorElement(el, row) {
-    let anchor = el;
-    for (let depth = 0; depth < 2; depth++) {
-      const parent = anchor.parentElement;
-      if (!parent || parent === row) break;
-      const tag = (parent.tagName || "").toUpperCase();
-      if (tag === "TD" || tag === "TR" || tag === "TBODY" || tag === "TABLE") {
-        break;
-      }
-      const parentTitle = normalizeText(
-        parent.getAttribute?.("title") || parent.getAttribute?.("aria-label")
-      );
-      const isDirectWrapper =
-        tag === "A" || tag === "BUTTON" || parentTitle === "下载";
-      if (!isDirectWrapper) break;
-      anchor = parent;
-      if (tag === "A" || tag === "BUTTON") break;
-    }
-    return anchor;
+  const TOOLBAR_EXCLUSIONS =
+    ".wp-s-agile-tool-bar, .wp-s-header__toolbar, .wp-s-core-pan__header-tool-bar, .bar, .tcuLAu";
+
+  const STRONG_MENU_LABELS = new Set([
+    "重命名",
+    "复制",
+    "移动",
+    "复制到",
+    "移动到",
+    "导出文件目录",
+    "共享",
+    "详细信息",
+    "详情",
+    "属性",
+    "移入隐藏空间",
+    "加入收藏",
+  ]);
+
+  const ALL_MENU_LABELS = new Set([
+    ...STRONG_MENU_LABELS,
+    "下载",
+    "分享",
+    "删除",
+    "收藏",
+    "播放",
+    "打开",
+    "预览",
+    "转存",
+    "解压",
+    "在线编辑",
+  ]);
+
+  function resolveRowContextFromTarget(target) {
+    const el = target && target.nodeType === 1 ? target : target?.parentElement;
+    if (!el || typeof el.closest !== "function") return null;
+    if (el.closest(EXCLUDED_CONTAINERS) || el.closest(".pd-inline-btn")) return null;
+    const row = el.closest(ROW_SELECTOR) || el.closest("tbody tr");
+    if (!row || row.closest?.(EXCLUDED_CONTAINERS)) return null;
+    const item = extractBaiduRowItem(row);
+    if (!item.id && !item.name) return null;
+    const isMoreTrigger = Boolean(
+      el.closest(
+        "[title='更多'], [aria-label='更多'], [class*='more'], [class*='ellipsis'], [class*='dot']"
+      )
+    );
+    return { row, item, isMoreTrigger };
   }
 
-  function findRowAnchors(doc) {
-    const results = [];
-    const seenRows = new Set();
-    const candidates = doc.querySelectorAll(
-      "[title='下载'], [aria-label='下载'], .u-icon-download, .icon-download, [class*='icon-download'], [class*='action-download'], [class*='action'] button, [class*='action'] a, [class*='action'] span, [class*='operate'] a"
-    );
+  function normalizeMenuText(str) {
+    return String(str || "")
+      .replace(/[\uE000-\uF8FF\u200B-\u200D\uFEFF]/g, "")
+      .replace(/\s+/g, "")
+      .trim();
+  }
 
-    candidates.forEach((el) => {
-      if (typeof el.closest !== "function") return;
-      if (el.closest(EXCLUDED_CONTAINERS) || el.closest(".pd-inline-btn")) return;
+  function countDistinctMenuLabels(text) {
+    let count = 0;
+    for (const lbl of ALL_MENU_LABELS) {
+      if (text.includes(lbl)) {
+        count++;
+        if (count >= 2) return count;
+      }
+    }
+    return count;
+  }
 
-      const text = normalizeText(el.textContent);
-      const title = normalizeText(
-        el.getAttribute?.("title") || el.getAttribute?.("aria-label")
-      );
-      const classStr = typeof el.className === "string" ? el.className : "";
-      if (FORBIDDEN_DOWNLOAD_RE.test(`${text} ${title}`)) return;
+  function climbToMenuItem(el, label) {
+    let cur = el;
+    for (let depth = 0; depth < 4; depth++) {
+      const parent = cur.parentElement;
+      if (!parent) break;
+      const tag = (parent.tagName || "").toUpperCase();
+      if (
+        tag === "BODY" ||
+        tag === "HTML" ||
+        tag === "UL" ||
+        tag === "OL" ||
+        tag === "TABLE" ||
+        tag === "TBODY" ||
+        tag === "TR" ||
+        tag === "TD"
+      ) {
+        break;
+      }
+      const parentText = normalizeMenuText(parent.textContent);
+      if (!parentText) break;
+      if (parentText === label) {
+        cur = parent;
+        continue;
+      }
+      if (
+        parentText.length <= label.length + 3 &&
+        parentText.includes(label) &&
+        countDistinctMenuLabels(parentText) <= 1
+      ) {
+        cur = parent;
+        continue;
+      }
+      break;
+    }
+    return cur;
+  }
 
-      const looksLikeDownload =
-        title === "下载" ||
-        text === "下载" ||
-        (/download/i.test(classStr) && text.length <= 4);
-      if (!looksLikeDownload) return;
+  function isVerticallyStacked(firstEl, secondEl) {
+    if (
+      typeof firstEl?.getBoundingClientRect !== "function" ||
+      typeof secondEl?.getBoundingClientRect !== "function"
+    ) {
+      return true;
+    }
+    const r1 = firstEl.getBoundingClientRect();
+    const r2 = secondEl.getBoundingClientRect();
+    if (!r1 || !r2) return true;
+    if (r1.width === 0 && r1.height === 0 && r2.width === 0 && r2.height === 0) {
+      return true;
+    }
+    return Math.abs(r2.top - r1.top) >= 12;
+  }
 
-      const row = el.closest(ROW_SELECTOR) || el.closest("tbody tr");
-      if (!row || seenRows.has(row)) return;
-      if (row.closest?.(EXCLUDED_CONTAINERS)) return;
+  function collectCandidateMenuRoots(doc) {
+    const roots = new Set();
+    if (typeof doc.querySelectorAll === "function") {
+      doc
+        .querySelectorAll(
+          "[role='menu'], [role='tooltip'], ul, [class*='popover'], [class*='popper'], [class*='dropdown'], [class*='context'], [class*='more-menu'], [class*='action-menu']"
+        )
+        .forEach((node) => roots.add(node));
+    }
+    const bodyChildren = doc.body?.children || [];
+    for (let i = 0; i < bodyChildren.length; i++) {
+      const child = bodyChildren[i];
+      if (!child || child.id === "pandirect-root" || child.id === "app" || child.id === "root") {
+        continue;
+      }
+      const tag = (child.tagName || "").toUpperCase();
+      if (tag === "SCRIPT" || tag === "STYLE" || tag === "LINK" || tag === "IFRAME") {
+        continue;
+      }
+      if (
+        typeof child.querySelector === "function" &&
+        child.querySelector("table, .wp-s-pan-table__body-row")
+      ) {
+        continue;
+      }
+      roots.add(child);
+    }
+    return Array.from(roots);
+  }
 
-      const anchor = resolveRowAnchorElement(el, row);
-      if (!anchor || isElementHiddenInline(anchor)) return;
+  const MENU_CONTAINER_HINT =
+    "[role='menu'], [role='tooltip'], ul, [class*='popover'], [class*='popper'], [class*='dropdown'], [class*='menu'], [class*='context']";
 
-      const preview = extractBaiduRowItem(row);
-      if (!preview.id && !preview.name) return;
+  function findMenuAnchors(doc) {
+    const grouped = new Map();
+    const roots = collectCandidateMenuRoots(doc);
 
-      seenRows.add(row);
-      results.push({
-        anchor,
-        insertPosition: "afterend",
-        getItem: () => extractBaiduRowItem(row),
+    for (const root of roots) {
+      if (!root || typeof root.querySelectorAll !== "function") continue;
+      if (root.closest?.(EXCLUDED_CONTAINERS) || root.closest?.(TOOLBAR_EXCLUSIONS)) {
+        continue;
+      }
+      const nodes = root.querySelectorAll("li, [role='menuitem'], a, button, div, span");
+      nodes.forEach((node) => {
+        if (!node || typeof node.closest !== "function") return;
+        if (
+          node.closest(EXCLUDED_CONTAINERS) ||
+          node.closest(TOOLBAR_EXCLUSIONS) ||
+          node.closest(".pd-inline-menu-item")
+        ) {
+          return;
+        }
+        const label = normalizeMenuText(node.textContent);
+        if (!label || !ALL_MENU_LABELS.has(label)) return;
+
+        const itemEl = climbToMenuItem(node, label);
+        const container = itemEl.parentElement;
+        if (!container) return;
+        const cTag = (container.tagName || "").toUpperCase();
+        if (
+          cTag === "BODY" ||
+          cTag === "HTML" ||
+          cTag === "TABLE" ||
+          cTag === "TBODY" ||
+          cTag === "THEAD" ||
+          cTag === "TR" ||
+          cTag === "TD"
+        ) {
+          return;
+        }
+        if (
+          container.closest?.(EXCLUDED_CONTAINERS) ||
+          container.closest?.(TOOLBAR_EXCLUSIONS)
+        ) {
+          return;
+        }
+        const enclosingRow = container.closest?.(ROW_SELECTOR) || container.closest?.("tbody tr");
+        if (enclosingRow && !container.closest?.(MENU_CONTAINER_HINT)) {
+          return;
+        }
+
+        if (!grouped.has(container)) {
+          grouped.set(container, new Map());
+        }
+        const itemMap = grouped.get(container);
+        if (!itemMap.has(itemEl)) {
+          itemMap.set(itemEl, label);
+        }
       });
-    });
+    }
+
+    const results = [];
+    for (const [container, itemMap] of grouped.entries()) {
+      const entries = Array.from(itemMap.entries());
+      const distinctLabels = new Set(entries.map(([, lbl]) => lbl));
+      if (distinctLabels.size < 2) continue;
+
+      let hasStrong = false;
+      for (const lbl of distinctLabels) {
+        if (STRONG_MENU_LABELS.has(lbl)) {
+          hasStrong = true;
+          break;
+        }
+      }
+      if (!hasStrong) continue;
+
+      const [firstEl] = entries[0];
+      const [secondEl] = entries[1];
+      if (!isVerticallyStacked(firstEl, secondEl)) continue;
+
+      const itemTag =
+        (firstEl.tagName || "").toUpperCase() === "LI" ? "li" : "div";
+      const enclosingRow =
+        container.closest?.(ROW_SELECTOR) || container.closest?.("tbody tr") || null;
+      results.push({
+        menu: container,
+        anchor: firstEl,
+        insertPosition: "beforebegin",
+        itemTag,
+        getItem: enclosingRow ? () => extractBaiduRowItem(enclosingRow) : null,
+      });
+    }
 
     return results;
   }
@@ -284,7 +463,8 @@
     fallbackDir: "/apps/PanDirect",
     fallbackHint: "读取失败。如果是应用沙盒限制，可尝试点击下方进入专属目录：",
     inlineActions: {
-      findRowAnchors,
+      resolveRowContextFromTarget,
+      findMenuAnchors,
       findToolbarAnchors,
     },
   });
