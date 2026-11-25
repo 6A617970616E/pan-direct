@@ -56,7 +56,7 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
 ├── tests/
 │   ├── architecture.test.mjs        # 核心模块、百度适配器与双产物隔离测试
 │   └── quark.test.mjs               # 夸克适配器全链路与 Store 零残留隔离测试
-├── package.json                     # 零依赖脚本入口（npm run build / npm test）
+├── package.json                     # 脚本入口（npm run build / npm test 零依赖；npm run test:browser 需 Playwright 开发依赖）
 ├── test-page.html                   # 网页桥接本地测试页（不打入发布包）
 ├── README.md
 ├── LICENSE

@@ -41,7 +41,7 @@
 
 ## 架构与双产物打包（Store / Community）
 
-本项目采用 `core/` + `providers/official/` + `providers/community/` 分层架构，零第三方 npm 依赖：
+本项目采用 `core/` + `providers/official/` + `providers/community/` 分层架构，扩展运行时与构建脚本零第三方 npm 依赖（仅浏览器集成测试使用 Playwright 作为开发依赖）：
 
 - **商店正式版（`dist/store.zip`）**：仅包含 100% 官方 OpenAPI 适配器（百度网盘），最小权限集（无 `cookies` 权限、无 `localhost` 网页脚本注入），用于上架 Microsoft Edge Add-ons 与 Chrome Web Store；提审指南见 [docs/STORE_SUBMISSION.md](./docs/STORE_SUBMISSION.md)。
 - **社区版（`dist/community.zip`）**：额外包含社区实验性适配器（夸克网盘、迅雷云盘，支持浏览器直下、整文件夹写盘与本机 Aria2 零配置自动复用会话，同样不含 `localhost` 桥接脚本），仅通过 GitHub Releases / 源码构建分发。
@@ -52,7 +52,8 @@
   npm run build:store      # 仅打包商店正式版（严格排除 providers/community/ 与对应权限）
   npm run build:community  # 打包社区版（包含官方 + 社区实验性适配器）
   npm run sync-root        # 根据 provider.json 同步根目录 manifest.json 与 providers/index.js
-  npm test                 # 运行单元测试与双产物隔离校验
+  npm test                 # 运行单元测试与双产物隔离校验（零依赖）
+  npm run test:browser     # 在真实 Chromium 中跑 DNR 规则场景矩阵（需先 npm install && npx playwright install chromium）
   ```
 
 ---
