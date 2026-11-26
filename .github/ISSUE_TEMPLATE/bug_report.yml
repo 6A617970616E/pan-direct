@@ -12,7 +12,7 @@ body:
     attributes:
       label: PanDirect 版本与发行版
       description: 可在扩展弹窗左下角查看（从插件「问题反馈」打开时会自动预填）
-      placeholder: 例如：v0.4.0 (Store) 或 v0.4.0 (Community)
+      placeholder: 例如：v1.0.0 (Store) 或 v1.0.0 (Community)
     validations:
       required: true
 
