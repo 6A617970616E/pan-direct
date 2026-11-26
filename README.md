@@ -46,15 +46,18 @@
 - **商店正式版（`dist/store.zip`）**：仅包含 100% 官方 OpenAPI 适配器（百度网盘），最小权限集（无 `cookies` 权限、无 `localhost` 网页脚本注入），用于上架 Microsoft Edge Add-ons 与 Chrome Web Store；提审指南见 [docs/STORE_SUBMISSION.md](./docs/STORE_SUBMISSION.md)。
 - **社区版（`dist/community.zip`）**：额外包含社区实验性适配器（夸克网盘、迅雷云盘，支持浏览器直下、整文件夹写盘与本机 Aria2 零配置自动复用会话，同样不含 `localhost` 桥接脚本），仅通过 GitHub Releases / 源码构建分发。
 - **直接开发加载**：仓库根目录自带已同步的 `manifest.json`（默认不注入 `localhost` 桥接脚本，如需本地联调 `test-page.html` 可使用 `node scripts/build.mjs --sync-root --no-dist --with-dev-bridge` 并在扩展存储中手动开启 `devBridgeEnabled`）。
-- **双产物构建**（Node.js >= 18）：
+- **双产物构建与自动发版**（Node.js >= 18）：
   ```bash
-  npm run build            # 同时产出 dist/store.zip 与 dist/community.zip
-  npm run build:store      # 仅打包商店正式版（严格排除 providers/community/ 与对应权限）
-  npm run build:community  # 打包社区版（包含官方 + 社区实验性适配器）
-  npm run sync-root        # 根据 provider.json 同步根目录 manifest.json 与 providers/index.js
-  npm test                 # 运行单元测试与双产物隔离校验（零依赖）
-  npm run test:browser     # 在真实 Chromium 中跑 DNR 规则场景矩阵（需先 npm install && npx playwright install chromium）
+  npm run build                       # 同时产出 dist/store.zip 与 dist/community.zip
+  npm run build:store                 # 仅打包商店正式版（严格排除 providers/community/ 与对应权限）
+  npm run build:community             # 打包社区版（包含官方 + 社区实验性适配器）
+  npm run sync-root                   # 根据 provider.json 同步根目录 manifest.json 与 providers/index.js
+  npm run version:check               # 校验 package.json / manifest / popup 版本号一致性
+  npm run version:bump -- 0.4.1       # 一键同步版本号（支持 patch / minor / major / X.Y.Z）
+  npm test                            # 运行单元测试与双产物隔离校验（零依赖）
+  npm run test:browser                # 在真实 Chromium 中跑 DNR 规则场景矩阵（需先 npm install && npx playwright install chromium）
   ```
+  - 推送 `vX.Y.Z` 标签（如 `git tag v0.4.1 && git push origin main --tags`）或在 GitHub Actions 手动运行 `Release` 工作流，将自动测试、打包并发布 `pan-direct-store-vX.Y.Z.zip`、`pan-direct-community-vX.Y.Z.zip` 与 `SHA256SUMS.txt` 至 GitHub Releases。
 
 ---
 

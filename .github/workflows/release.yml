@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "Save release as draft instead of publishing immediately"
+        type: boolean
+        default: false
+      prerelease:
+        description: "Mark release as prerelease"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve and validate release tag
+        id: meta
+        run: |
+          PKG_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v${PKG_VERSION}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${PKG_VERSION}" >> "$GITHUB_OUTPUT"
+          node scripts/bump-version.mjs --check --tag="${TAG}"
+
+      - name: Verify generated root manifest and provider registry are in sync
+        run: |
+          npm run sync-root
+          git diff --exit-code manifest.json providers/index.js providers/popup-index.js
+
+      - name: Run full test suite
+        run: npm test
+
+      - name: Build Store and Community artifacts
+        run: npm run build
+
+      - name: Package versioned release assets and SHA256SUMS
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          mkdir -p dist/release
+          cp dist/store.zip "dist/release/pan-direct-store-${TAG}.zip"
+          cp dist/community.zip "dist/release/pan-direct-community-${TAG}.zip"
+          (
+            cd dist/release
+            sha256sum "pan-direct-store-${TAG}.zip" "pan-direct-community-${TAG}.zip" > SHA256SUMS.txt
+          )
+          cat dist/release/SHA256SUMS.txt
+
+      - name: Prepare release notes header
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const tag = process.env.RELEASE_TAG;
+            const sums = fs.readFileSync("dist/release/SHA256SUMS.txt", "utf8").trim();
+            const notes = [
+              "### 安装包说明",
+              "",
+              "| 安装包 | 适用人群 | 包含网盘与权限 |",
+              "| --- | --- | --- |",
+              `| \`pan-direct-store-${tag}.zip\` | **商店正式版**（Edge / Chrome 商店同源包） | 仅包含官方开放平台适配器（百度网盘），最小权限集，不含 \`cookies\` 权限 |`,
+              `| \`pan-direct-community-${tag}.zip\` | **开源社区版**（GitHub 用户推荐） | 包含官方适配器（百度网盘）与社区实验性适配器（夸克网盘、迅雷云盘） |`,
+              "",
+              "> 两个发行包均已通过自动化安全与商店隔离测试，不含开发用 `localhost` 桥接脚本。",
+              "",
+              "### 快速安装",
+              "1. 下载上方对应压缩包并解压到本地目录。",
+              "2. 打开 Chrome `chrome://extensions/`（或 Edge `edge://extensions/`），开启右上角「开发者模式」。",
+              "3. 点击「加载已解压的扩展程序」，选择解压后的目录即可（覆盖升级时直接替换原目录文件并在扩展页点击刷新）。",
+              "",
+              "### SHA-256 校验和",
+              "```text",
+              sums,
+              "```",
+              "",
+              "---",
+              "",
+            ].join("\n");
+            fs.writeFileSync("dist/release/RELEASE_NOTES.md", notes, "utf8");
+          '
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          NOTES="$(cat dist/release/RELEASE_NOTES.md)"
+          ARGS=(
+            "${TAG}"
+            "dist/release/pan-direct-store-${TAG}.zip"
+            "dist/release/pan-direct-community-${TAG}.zip"
+            "dist/release/SHA256SUMS.txt"
+            --title "PanDirect ${TAG}"
+            --notes "${NOTES}"
+            --generate-notes
+          )
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ARGS+=(--verify-tag)
+          else
+            ARGS+=(--target "${GITHUB_SHA}")
+          fi
+          if [ "${{ inputs.draft }}" = "true" ]; then
+            ARGS+=(--draft)
+          fi
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+          gh release create "${ARGS[@]}"
