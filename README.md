@@ -1,5 +1,9 @@
 # PanDirect · 轻量百度网盘浏览器直下扩展（MV3）
 
+[![Microsoft Edge Add-ons](https://img.shields.io/badge/Microsoft%20Edge%20Add--ons-安装正式版-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/pandirect/kfomcaaknpmacpmpefdejfjkhefgnlbf)
+[![GitHub Release](https://img.shields.io/github/v/release/6A617970616E/pan-direct?label=GitHub%20Releases)](https://github.com/6A617970616E/pan-direct/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+
 **PanDirect** 是一款纯本地运行、免后端、零第三方依赖的 Chrome / Edge（Manifest V3）开源扩展。基于百度网盘开放平台官方 OAuth 与 OpenAPI，让你脱离官方重型客户端，直接在浏览器中下载单文件或整个文件夹（保留完整子目录结构），或一键推送至本地 Aria2 / Motrix。
 
 ## 核心特性
@@ -15,11 +19,14 @@
 
 ## 3 分钟快速上手
 
-### 第 1 步：加载扩展
-1. **推荐**：前往 [GitHub Releases](https://github.com/6A617970616E/pan-direct/releases) 下载对应版本的压缩包并解压（商店正式版 `store.zip` 仅含官方百度网盘适配器；社区版 `community.zip` 额外包含夸克、迅雷适配器；两个发行包均已剔除开发脚本与多余权限）。
-   - 如果从源码构建，可运行 `npm run build` 后加载 `dist/community/`（或 `dist/store/`）；直接加载仓库根目录的 `manifest.json` 也可用于本地开发调试（默认已关闭 `localhost` 桥接脚本注入）。
-2. 打开 Chrome 访问 `chrome://extensions/`（Edge 访问 `edge://extensions/`）。
-3. 打开右上角 **「开发者模式」** → 点击 **「加载已解压的扩展程序」** → 选择解压后的目录。
+### 第 1 步：安装扩展
+
+- **方式 A（推荐，Edge 用户国内直连一键安装）**：直接前往 [Microsoft Edge 加载项商店 · PanDirect](https://microsoftedge.microsoft.com/addons/detail/pandirect/kfomcaaknpmacpmpefdejfjkhefgnlbf) 点击「获取」即可安装商店正式版（自动更新、仅含百度官方 OpenAPI）。Chrome Web Store 商店版已提审，过审后将同步补充链接。
+- **方式 B（Chrome 手动加载，或安装社区版含夸克/迅雷）**：
+  1. 前往 [GitHub Releases](https://github.com/6A617970616E/pan-direct/releases) 下载对应版本的压缩包并解压（商店正式版 `store.zip` 仅含官方百度网盘适配器；社区版 `community.zip` 额外包含夸克、迅雷适配器；两个发行包均已剔除开发脚本与多余权限）。
+     - 如果从源码构建，可运行 `npm run build` 后加载 `dist/community/`（或 `dist/store/`）；直接加载仓库根目录的 `manifest.json` 也可用于本地开发调试（默认已关闭 `localhost` 桥接脚本注入）。
+  2. 打开 Chrome 访问 `chrome://extensions/`（Edge 访问 `edge://extensions/`）。
+  3. 打开右上角 **「开发者模式」** → 点击 **「加载已解压的扩展程序」** → 选择解压后的目录。
 
 ### 第 2 步：免费获取你自己的 `AppKey`
 1. 打开 [百度网盘开放平台](https://pan.baidu.com/union/)，登录你的百度账号并完成个人开发者认证。

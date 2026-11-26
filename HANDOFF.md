@@ -117,4 +117,5 @@ PanDirect 是一个基于 **Chrome / Edge Manifest V3** 的轻量网盘直链下
    - ✅ 已完成：重构 `core/` + `providers/official/` + `providers/community/` 双构建打包脚本与自动化测试；
    - ✅ 已完成：夸克网盘社区适配器（已合并入 `main`，单文件浏览器直下、本机 Aria2 零配置自动复用会话已真机验证通过）；
    - ✅ 已完成：中英文隐私政策（`PRIVACY.md`）、商店上架提审指南（`docs/STORE_SUBMISSION.md`）与 `dist/store.zip` 合规加固（去除 `localhost` `content-bridge.js`、补齐 `homepage_url` 与弹窗隐私链接）；
-   - ⬜ 待做：准备商店截图与 `300×300`/`440×280` 视觉素材并提交 Edge Add-ons & Chrome Web Store、接入 123云盘官方 Provider、补充「复制直链 / 复制 curl 命令」、弹窗显示百度账号昵称（`xpan/nas?method=uinfo`）。
+   - ✅ 已完成：商店视觉素材（`300×300`、`440×280`、`1400×560` 与 3 张 `1280×800` 截图）、[Microsoft Edge Add-ons 正式上架](https://microsoftedge.microsoft.com/addons/detail/pandirect/kfomcaaknpmacpmpefdejfjkhefgnlbf)（`v1.0.0`），以及 Chrome Web Store 提审（审核中）；
+   - ⬜ 待做：Chrome Web Store 过审后补充商店链接、接入 123云盘官方 Provider、补充「复制直链 / 复制 curl 命令」、弹窗显示百度账号昵称（`xpan/nas?method=uinfo`）。
