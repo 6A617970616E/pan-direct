@@ -4,6 +4,7 @@
  *
  * Keeps all version declarations in lockstep across:
  *   - package.json
+ *   - package-lock.json (root `version` fields, when the lockfile exists)
  *   - manifest.base.json
  *   - manifest.json (via syncRootManifestAndRegistry)
  *   - popup/popup.html (#versionText fallback)
@@ -96,6 +97,20 @@ export function checkVersionConsistency(
   if (!isValidExtensionVersion(pkg.version)) {
     errors.push(`package.json version "${pkg.version}" is not a valid X.Y.Z version`);
   }
+  const lockPath = path.join(rootDir, "package-lock.json");
+  if (fs.existsSync(lockPath)) {
+    const lock = readJson(lockPath);
+    for (const [label, value] of [
+      ["version", lock.version],
+      ['packages[""].version', lock.packages?.[""]?.version],
+    ]) {
+      if (value !== undefined && value !== pkg.version) {
+        errors.push(
+          `package-lock.json ${label} "${value}" !== package.json "${pkg.version}"`
+        );
+      }
+    }
+  }
   if (baseManifest.version !== pkg.version) {
     errors.push(
       `manifest.base.json version "${baseManifest.version}" !== package.json "${pkg.version}"`
@@ -142,6 +157,16 @@ export function bumpVersion(rootDir = DEFAULT_ROOT_DIR, target) {
 
   pkg.version = nextVersion;
   writeJson(pkgPath, pkg);
+
+  const lockPath = path.join(rootDir, "package-lock.json");
+  if (fs.existsSync(lockPath)) {
+    const lock = readJson(lockPath);
+    lock.version = nextVersion;
+    if (lock.packages?.[""]) {
+      lock.packages[""].version = nextVersion;
+    }
+    writeJson(lockPath, lock);
+  }
 
   const baseManifest = readJson(basePath);
   baseManifest.version = nextVersion;
@@ -207,7 +232,7 @@ function main() {
     `[PanDirect] Bumped version: v${res.previousVersion} -> v${res.version}`
   );
   console.log(
-    `[PanDirect] Updated package.json, manifest.base.json, manifest.json, and popup/popup.html`
+    `[PanDirect] Updated package.json, package-lock.json, manifest.base.json, manifest.json, and popup/popup.html`
   );
   console.log("\nNext steps to publish a GitHub Release:");
   console.log(`  npm test && npm run build`);

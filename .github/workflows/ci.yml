@@ -45,3 +45,26 @@ jobs:
 
       - name: Build Store and Community artifacts
         run: npm run build
+
+  browser:
+    name: DNR rule matrix (real Chromium)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dev dependencies (Playwright)
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run DNR scenario matrix
+        run: npm run test:browser

@@ -1436,6 +1436,7 @@ test("scripts/bump-version validates, checks consistency, and bumps all version 
   try {
     for (const item of [
       "package.json",
+      "package-lock.json",
       "manifest.base.json",
       "manifest.json",
       "popup",
@@ -1459,6 +1460,15 @@ test("scripts/bump-version validates, checks consistency, and bumps all version 
       "utf8"
     );
     assert.ok(updatedPopup.includes(`<span id="versionText">v${res.version}</span>`));
+
+    // package-lock.json root versions move in lockstep, and drift is reported
+    const lockPath = path.join(tempRoot, "package-lock.json");
+    const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+    assert.equal(lock.version, res.version);
+    assert.equal(lock.packages[""].version, res.version);
+    lock.packages[""].version = "0.0.1";
+    fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + "\n");
+    assert.throws(() => checkVersionConsistency(tempRoot), /package-lock\.json/);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
